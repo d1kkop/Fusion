@@ -123,7 +123,7 @@ namespace TestReliable.Tests
         {
             int numMessagesReceivedN1 = 0;
             int numMessagesReceivedN2 = 0;
-            int packetLoss = 0;
+            int packetLoss = 5;
             ushort dstPort = 3008;
             Node n1 = new Node();
             Node n2 = new Node();

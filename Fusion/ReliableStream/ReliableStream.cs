@@ -128,28 +128,30 @@ namespace Fusion
         internal void ReceiveDataWT( BinaryReader reader )
         {
             uint sequence = reader.ReadUInt32();
-            if (sequence != m_ReliableDataRT.m_AckExpected) // Unexpected
-                return;
-            while (reader.BaseStream.Position < reader.BaseStream.Length )
+            if (sequence == m_ReliableDataRT.m_AckExpected) // Unexpected
             {
-                ushort messageLen = reader.ReadUInt16();
-                
-                // Make reliable received message
-                RecvMessage rm = new RecvMessage();
-                rm.m_Channel = m_Channel;
-                rm.m_Id      = reader.ReadByte();
-                rm.m_Payload = reader.ReadBytes( messageLen );
-                rm.m_Recipient = m_Recipient.EndPoint;
-
-                // Add it thread safely
-                lock (m_ReliableDataRT.m_Messages)
+                while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
-                    m_ReliableDataRT.m_Messages.Enqueue( rm );
-                }
+                    ushort messageLen = reader.ReadUInt16();
 
-                sequence += 1;
+                    // Make reliable received message
+                    RecvMessage rm = new RecvMessage();
+                    rm.m_Channel = m_Channel;
+                    rm.m_Id      = reader.ReadByte();
+                    rm.m_Payload = reader.ReadBytes( messageLen );
+                    rm.m_Recipient = m_Recipient.EndPoint;
+
+                    // Add it thread safely
+                    lock (m_ReliableDataRT.m_Messages)
+                    {
+                        m_ReliableDataRT.m_Messages.Enqueue( rm );
+                    }
+
+                    sequence += 1;
+                }
+                m_ReliableDataRT.m_AckExpected = sequence;
             }
-            m_ReliableDataRT.m_AckExpected = sequence;
+            // Always send ack. Ack may have been lost previously. Keep sending this until transmitter knows it was delivered.
             FlushAckWT();
         }
 

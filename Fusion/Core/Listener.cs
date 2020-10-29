@@ -26,15 +26,13 @@ namespace Fusion
 
         void ReceiveCallbackWT( IAsyncResult result )
         {
-            // Simulate Packet Loss
-            if (SimulatePacketLoss > 0)
-            {
-                if (m_Random.Next( 0, SimulatePacketLoss )== 0)
-                    return;
-            }
+            bool skipPacket = SimulatePacketLoss > 0 && m_Random.Next( 0, SimulatePacketLoss )==0;
             IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, 0);
             byte [] data = UDPClient.EndReceive( result, ref endpoint );
-            m_Node.ReceiveDataWT( data, endpoint, UDPClient );
+            if (!skipPacket)
+            {
+                m_Node.ReceiveDataWT( data, endpoint, UDPClient );
+            }
             UDPClient.BeginReceive( ReceiveCallbackWT, null );
         }
     }

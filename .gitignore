@@ -1,0 +1,26 @@
+
+#folders
+bin
+obj
+
+
+# Python cache
+__pycache__
+
+# extensions
+.pyc
+.vscode
+.vs
+*.VC.db
+*.opensdf
+*.opendb
+*.sdf
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+*.zip
+*.7z
+*.pyc
+*.cpython-38.pyc
+*.pyo

@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -9,6 +8,7 @@ namespace Fusion
 {
     public class Recipient
     {
+        UnreliableStream m_UnreliableStream;
         Dictionary<byte, ReliableStream> m_ReliableStreams = new Dictionary<byte, ReliableStream>();
 
         internal Node Node { get; }
@@ -20,6 +20,7 @@ namespace Fusion
             Node      = node;
             EndPoint  = endpoint;
             UDPClient = recipient;
+            m_UnreliableStream = new UnreliableStream( this );
         }
 
         internal void Sync()
@@ -32,20 +33,35 @@ namespace Fusion
                     stream.Sync();
                 }
             }
+            m_UnreliableStream.Sync();
         }
 
-        internal void Send( byte id, byte[] data, byte channel )
+        internal void Send( byte id, byte[] data, byte channel, SendMethod sendMethod )
         {
-            ReliableStream stream;
-            lock(m_ReliableStreams)
+            switch ( sendMethod)
             {
-                if (!m_ReliableStreams.TryGetValue( channel, out stream ))
+                case SendMethod.Reliable:
                 {
-                    stream = new ReliableStream( this, channel );
-                    m_ReliableStreams.Add( channel, stream );
+                    ReliableStream stream;
+                    lock (m_ReliableStreams)
+                    {
+                        if (!m_ReliableStreams.TryGetValue( channel, out stream ))
+                        {
+                            stream = new ReliableStream( this, channel );
+                            m_ReliableStreams.Add( channel, stream );
+                        }
+                    }
+                    stream.AddMessage( id, data );
                 }
+                break;
+
+                case SendMethod.Unreliable:
+                {
+                    m_UnreliableStream.AddMessage( id, data );
+                }
+                break;
             }
-            stream.AddMessage( id, data );
+
         }
 
         internal void ReceiveDataWT( BinaryReader reader )
@@ -73,6 +89,12 @@ namespace Fusion
                 }
                 break;
 
+                case UnreliableStream.URID:
+                {
+                    m_UnreliableStream.ReceiveDataWT( reader );
+                }
+                break;
+
                 default:
                 Debug.WriteLine( "Unknown stream id detected, data ignored." );
                 break;
@@ -89,6 +111,7 @@ namespace Fusion
                     stream.FlushST();
                 }
             }
+            m_UnreliableStream.FlushST();
         }
     }
 }

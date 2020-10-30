@@ -24,7 +24,7 @@ namespace TestReliable.Tests
             n2.AddListener( 3005 );
             string myMessage = "A first message";
             byte [] data = Encoding.UTF8.GetBytes(myMessage);
-            n1.Send( 5, data );
+            n1.Send( 20, data );
 
             n2.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
             {
@@ -60,7 +60,7 @@ namespace TestReliable.Tests
             n2.AddRecipient( dstPort, "localhost", boundPort );
             string myMessage = "A first message";
             byte [] data = Encoding.UTF8.GetBytes(myMessage);
-            n2.Send( 5, data );
+            n2.Send( 255, data );
 
             n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
             {
@@ -98,7 +98,7 @@ namespace TestReliable.Tests
             byte [] data = Encoding.UTF8.GetBytes(myMessage);
             int numMsgsSent = 10000;
             for ( int i = 0; i < numMsgsSent; i++)
-                n2.Send( 5, data );
+                n2.Send( 128, data );
 
             n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
             {
@@ -148,7 +148,7 @@ namespace TestReliable.Tests
                 {
                     int a = rand.Next(0, 999);
                     int b = rand.Next(0, 999);
-                    byte packId = (byte)rand.Next(0, 256);
+                    byte packId = (byte)rand.Next(20, 256);
                     byte chanId = (byte)rand.Next(0, 256);
                     var dic = channelDataN1;
                     if (j==1) dic = channelDataN2;

@@ -7,6 +7,12 @@ using System.Threading;
 
 namespace Fusion
 {
+    public enum SendMethod
+    {
+        Reliable,
+        Unreliable
+    }
+
     public sealed class Node : IDisposable
     {
         Thread m_SendThread;
@@ -116,8 +122,13 @@ namespace Fusion
             }
         }
 
-        public void Send( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
+        public void Send( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
         {
+            if (id < 20)
+            {
+                throw new Exception( "Id's 0 to 19 are reserved." );
+            }
+
             lock (m_Recipients)
             {
                 if (target != null)
@@ -125,7 +136,7 @@ namespace Fusion
                     Recipient recipient;
                     if (m_Recipients.TryGetValue( target, out recipient ))
                     {
-                        recipient.Send( id, data, channel );
+                        recipient.Send( id, data, channel, sendMethod );
                     }
                 }
                 else
@@ -135,7 +146,7 @@ namespace Fusion
                         Recipient recipient = kvp.Value;
                         if (recipient.EndPoint == except)
                             continue;
-                        recipient.Send( id, data, channel );
+                        recipient.Send( id, data, channel, sendMethod );
                     }
                 }
             }

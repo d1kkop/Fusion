@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -118,12 +119,17 @@ namespace TestReliable.Tests
             n2.Dispose();
         }
 
+        class ChannelData
+        {
+            public int numReceived;
+            public List<string> messages;
+            public List<byte> packIds;
+        }
+
         [TestMethod()]
         public void CheckReliabilityWithPacketMassiveLoss()
         {
-            int numMessagesReceivedN1 = 0;
-            int numMessagesReceivedN2 = 0;
-            int packetLoss = 5;
+            int packetLoss = 2; // 50% packet loss
             ushort dstPort = 3008;
             Node n1 = new Node();
             Node n2 = new Node();
@@ -134,45 +140,71 @@ namespace TestReliable.Tests
             int numMsgsSent = 10000;
             Random rand = new Random();
 
-            List<byte> channelId = new List<byte>();
-            List<byte> packetId = new List<byte>();
-            List<string> randomMessages = new List<string>();
-            for ( int i = 0; i<numMsgsSent; i++ )
+            Dictionary<byte, ChannelData> channelDataN1 = new Dictionary<byte, ChannelData>();
+            Dictionary<byte, ChannelData> channelDataN2 = new Dictionary<byte, ChannelData>();
+            for (int j = 0;j < 2;j++)
             {
-                int a = rand.Next(0, 999);
-                int b = rand.Next(0, 999);
-                byte packId = (byte)rand.Next(0, 256);
-                byte chanId = (byte)rand.Next(0, 256);
-                packetId.Add( packId );
-                channelId.Add( 9 );
-                randomMessages.Add( $"this is {a} a random message {b}" );
+                for (int i = 0;i<numMsgsSent;i++)
+                {
+                    int a = rand.Next(0, 999);
+                    int b = rand.Next(0, 999);
+                    byte packId = (byte)rand.Next(0, 256);
+                    byte chanId = (byte)rand.Next(0, 256);
+                    var dic = channelDataN1;
+                    if (j==1) dic = channelDataN2;
+                    if (!dic.TryGetValue( chanId, out ChannelData chanData ))
+                    {
+                        chanData = new ChannelData();
+                        chanData.messages = new List<string>();
+                        chanData.packIds = new List<byte>();
+                        chanData.numReceived = 0;
+                        dic.Add( chanId, chanData );
+                    }
+                    string msg = $"this is {a} a random message {b}";
+                    chanData.messages.Add( msg );
+                    chanData.packIds.Add( packId );
+                }
             }
 
-            for (int i = 0; i < numMsgsSent;i++)
+            foreach ( var kvp in channelDataN1)
             {
-                n1.Send( packetId[numMsgsSent-1-i], Encoding.UTF8.GetBytes( randomMessages[numMsgsSent-1-i] ) , channelId[numMsgsSent-1-i]);
-                n2.Send( packetId[i], Encoding.UTF8.GetBytes( randomMessages[i] ), channelId[i] );
+                ChannelData cd = kvp.Value;
+                for ( int i = 0; i < cd.messages.Count; i++ )
+                {
+                    n1.Send( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key );
+                }
+            }
+            foreach (var kvp in channelDataN2)
+            {
+                ChannelData cd = kvp.Value;
+                for (int i = 0;i < cd.messages.Count;i++)
+                {
+                    n2.Send( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key );
+                }
             }
 
             n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
             {
                 string recvMessage = Encoding.UTF8.GetString( message );
-                Assert.AreEqual( recvMessage, randomMessages[numMessagesReceivedN1] );
-                Assert.AreEqual( id, packetId[numMessagesReceivedN1] );
-                Assert.AreEqual( channel, channelId[numMessagesReceivedN1] );
-                numMessagesReceivedN1++;
+                ChannelData cd;
+                channelDataN2.TryGetValue( channel, out cd );
+                Assert.AreEqual( recvMessage, cd.messages[cd.numReceived] );
+                Assert.AreEqual( id, cd.packIds[cd.numReceived] );
+                cd.numReceived++;
             };
 
             n2.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
             {
                 string recvMessage = Encoding.UTF8.GetString( message );
-                Assert.AreEqual( recvMessage, randomMessages[numMsgsSent- numMessagesReceivedN2-1] );
-                Assert.AreEqual( id, packetId[numMsgsSent-numMessagesReceivedN2-1] );
-                Assert.AreEqual( channel, channelId[numMsgsSent - numMessagesReceivedN2 -1] );
-                numMessagesReceivedN2++;
+                ChannelData cd;
+                channelDataN1.TryGetValue( channel, out cd );
+                Assert.AreEqual( recvMessage, cd.messages[cd.numReceived] );
+                Assert.AreEqual( id, cd.packIds[cd.numReceived] );
+                cd.numReceived++;
             };
 
-            while (numMessagesReceivedN1!=numMsgsSent || numMessagesReceivedN2!=numMsgsSent)
+            while (!channelDataN1.All( kvp => kvp.Value.messages.Count == kvp.Value.numReceived ) ||
+                   !channelDataN2.All( kvp => kvp.Value.messages.Count == kvp.Value.numReceived ) )
             {
                 n1.Sync();
                 n2.Sync();

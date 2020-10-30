@@ -4,8 +4,8 @@ namespace Fusion
 {
     class VariableGroupStream
     {
-        const byte VGID  = 100;
-        const byte VGACK = 110;
+        const byte VGID  = 3;
+        const byte VGACK = 4;
         const int MaxVariableGroupSize   = ushort.MaxValue;
 
         struct UpdatableSequence

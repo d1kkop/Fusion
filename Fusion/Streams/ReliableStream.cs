@@ -36,8 +36,8 @@ namespace Fusion
 
         class DataRT // ReceiveThread data
         {
+            internal uint m_Expected;
             internal uint m_AckExpected;
-            internal uint m_AckReceived;
             internal Queue<RecvMessage> m_Messages = new Queue<RecvMessage>();
         }
 
@@ -127,7 +127,7 @@ namespace Fusion
         internal void ReceiveDataWT( BinaryReader reader )
         {
             uint sequence = reader.ReadUInt32();
-            if (sequence == m_ReliableDataRT.m_AckExpected) // Unexpected
+            if (sequence == m_ReliableDataRT.m_Expected) // Unexpected
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
@@ -148,7 +148,7 @@ namespace Fusion
 
                     sequence += 1;
                 }
-                m_ReliableDataRT.m_AckExpected = sequence;
+                m_ReliableDataRT.m_Expected = sequence;
             }
             // Always send ack. Ack may have been lost previously. Keep sending this until transmitter knows it was delivered.
             FlushAckWT();
@@ -159,16 +159,16 @@ namespace Fusion
             m_BinWriter.BaseStream.Position = 0;
             m_BinWriter.Write( RACK );
             m_BinWriter.Write( m_Channel );
-            m_BinWriter.Write( m_ReliableDataRT.m_AckExpected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
+            m_BinWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
             m_Recipient.UDPClient.SendAsync( m_MemWriteStream.GetBuffer(), (int)m_BinWriter.BaseStream.Position, m_Recipient.EndPoint );
         }
 
         internal void ReceiveAckWT( BinaryReader reader )
         {
             uint ack = reader.ReadUInt32();
-            if (IsSequenceNewer( ack, m_ReliableDataRT.m_AckReceived ))
+            if (IsSequenceNewer( ack, m_ReliableDataRT.m_AckExpected ))
             {
-                int numPacketsToDrop = (int)(ack - m_ReliableDataRT.m_AckReceived) + 1;
+                int numPacketsToDrop = (int)(ack - m_ReliableDataRT.m_AckExpected) + 1;
                 lock (m_ReliableDataMT.m_Messages)
                 {
                     Debug.Assert( m_ReliableDataMT.m_Messages.Count >= numPacketsToDrop );
@@ -178,7 +178,7 @@ namespace Fusion
                         numPacketsToDrop--;
                     }
                 }
-                m_ReliableDataRT.m_AckReceived = ack+1;
+                m_ReliableDataRT.m_AckExpected = ack+1;
             }
         }
 

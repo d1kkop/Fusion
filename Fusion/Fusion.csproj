@@ -5,11 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="ReliableStream\VariableGroupStream.cs" />
+    <Compile Remove="Streams\VariableGroupStream.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="ReliableStream\VariableGroupStream.cs" />
+    <None Include="Streams\VariableGroupStream.cs" />
   </ItemGroup>
 
 </Project>

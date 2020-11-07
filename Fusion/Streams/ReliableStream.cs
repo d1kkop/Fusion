@@ -3,11 +3,25 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Threading.Channels;
 
 namespace Fusion
 {
+    internal enum SystemPacketId
+    {
+        IdPackRequest,
+        IdPackProvide,
+        CreateGroup,
+        DestroyGroup,
+        DestroyAllGroups,
+        Connect,
+        Disconnect,
+        Count
+    }
+
     public class ReliableStream
     {
+        public const byte SystemChannel = 255;
         public const byte RID    = 0;
         public const byte RACK   = 1;
         const int MaxFrameSize   = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers.
@@ -41,18 +55,19 @@ namespace Fusion
             internal Queue<RecvMessage> m_Messages = new Queue<RecvMessage>();
         }
 
-        byte m_Channel;
-        Recipient    m_Recipient;
-        MemoryStream m_MemWriteStream = new MemoryStream();
-        BinaryWriter m_BinWriter;
-        DataMT m_ReliableDataMT = new DataMT();
-        DataRT m_ReliableDataRT = new DataRT();
 
-        public ReliableStream( Recipient recipient, byte channel )
+        DataMT m_ReliableDataMT;
+        DataRT m_ReliableDataRT;
+
+        internal Recipient Recipient { get; }
+        internal byte Channel { get;  }
+
+        internal ReliableStream( Recipient recipient, byte channel )
         {
-            m_Recipient = recipient;
-            m_Channel   = channel;
-            m_BinWriter = new BinaryWriter( m_MemWriteStream );
+            Recipient = recipient;
+            Channel   = channel;
+            m_ReliableDataMT = new DataMT();
+            m_ReliableDataRT = new DataRT();
         }
 
         internal void AddMessage( byte packetId, byte[] payload )
@@ -80,12 +95,12 @@ namespace Fusion
                 while (m_ReliableDataRT.m_Messages.Count !=0)
                 {
                     var msg = m_ReliableDataRT.m_Messages.Dequeue();
-                    m_Recipient.Node.RaiseOnMessage( msg.m_Id, msg.m_Payload, msg.m_Recipient, m_Channel );
+                    Recipient.Node.RaiseOnMessage( msg.m_Id, msg.m_Payload, msg.m_Recipient, Channel );
                 }
             }
         }
 
-        internal void FlushST()
+        internal void FlushST(BinaryWriter binWriter)
         {
             // RID(1) | ChannelID(1) | Sequence(4) | MsgLen(2) | Msg(variable)
 
@@ -95,22 +110,22 @@ namespace Fusion
                 if (m_ReliableDataMT.m_Messages.Count == 0)
                     return;
 
-                m_BinWriter.BaseStream.Position = 0;
-                m_BinWriter.Write( RID );
-                m_BinWriter.Write( m_Channel );
+                binWriter.BaseStream.Position = 0;
+                binWriter.Write( RID );
+                binWriter.Write( Channel );
 
                 // Only send sequence of first message, other sequences are consequative.
-                m_BinWriter.Write( m_ReliableDataMT.m_Messages.Peek().m_Sequence );
+                binWriter.Write( m_ReliableDataMT.m_Messages.Peek().m_Sequence );
 
                 // Write each message with Length, ID & payload. The sequence is always the first +1 for each message.
                 foreach (var msg in m_ReliableDataMT.m_Messages)
                 {
                     Debug.Assert( msg.m_Payload.Length <= MaxPayloadSize );
-                    m_BinWriter.Write( (ushort)msg.m_Payload.Length );
-                    m_BinWriter.Write( msg.m_Id );
-                    m_BinWriter.Write( msg.m_Payload );
+                    binWriter.Write( (ushort)msg.m_Payload.Length );
+                    binWriter.Write( msg.m_Id );
+                    binWriter.Write( msg.m_Payload );
                     // Avoid fragmentation and exceeding max recvBuffer size (65536).
-                    if (m_BinWriter.BaseStream.Position > MaxFrameSize)
+                    if (binWriter.BaseStream.Position > MaxFrameSize)
                         break;
                     ++numMessagesAdded;
                 }
@@ -121,10 +136,10 @@ namespace Fusion
             Debug.Assert( numMessagesAdded!=0 );
 
             // Eventhough this is already in a send thread, do the actual send async to avoid keeping the lock longer than necessary.
-            m_Recipient.UDPClient.SendAsync( m_MemWriteStream.GetBuffer(), (int)m_BinWriter.BaseStream.Position, m_Recipient.EndPoint );
+            Recipient.UDPClient.SendAsync( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
-        internal void ReceiveDataWT( BinaryReader reader )
+        internal void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
             uint sequence = reader.ReadUInt32();
             if (sequence == m_ReliableDataRT.m_Expected) // Unexpected
@@ -132,18 +147,29 @@ namespace Fusion
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
                     ushort messageLen = reader.ReadUInt16();
+                    byte   id         = reader.ReadByte();
 
-                    // Make reliable received message
-                    RecvMessage rm = new RecvMessage();
-                    rm.m_Channel = m_Channel;
-                    rm.m_Id      = reader.ReadByte();
-                    rm.m_Payload = reader.ReadBytes( messageLen );
-                    rm.m_Recipient = m_Recipient.EndPoint;
-
-                    // Add it thread safely
-                    lock (m_ReliableDataRT.m_Messages)
+                    // Peek if message is system message. If so, handle system messages directly in the worker thread.
+                    // However, do NOT spawn new worker thread as that could invalidate the reliability order.
+                    if (id < (byte)SystemPacketId.Count)
                     {
-                        m_ReliableDataRT.m_Messages.Enqueue( rm );
+                        Debug.Assert( Channel == ReliableStream.SystemChannel );
+                        Recipient.ReceiveSystemMessageWT( reader, writer, id, Recipient.EndPoint, Channel );
+                    }
+                    else
+                    {
+                        // Make reliable received message
+                        RecvMessage rm = new RecvMessage();
+                        rm.m_Channel   = Channel;
+                        rm.m_Id        = id;
+                        rm.m_Payload   = reader.ReadBytes( messageLen );
+                        rm.m_Recipient = Recipient.EndPoint;
+
+                        // Add it thread safely
+                        lock (m_ReliableDataRT.m_Messages)
+                        {
+                            m_ReliableDataRT.m_Messages.Enqueue( rm );
+                        }
                     }
 
                     sequence += 1;
@@ -151,16 +177,16 @@ namespace Fusion
                 m_ReliableDataRT.m_Expected = sequence;
             }
             // Always send ack. Ack may have been lost previously. Keep sending this until transmitter knows it was delivered.
-            FlushAckWT();
+            FlushAckWT( writer );
         }
 
-        void FlushAckWT()
+        void FlushAckWT(BinaryWriter binWriter)
         {
-            m_BinWriter.BaseStream.Position = 0;
-            m_BinWriter.Write( RACK );
-            m_BinWriter.Write( m_Channel );
-            m_BinWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
-            m_Recipient.UDPClient.SendAsync( m_MemWriteStream.GetBuffer(), (int)m_BinWriter.BaseStream.Position, m_Recipient.EndPoint );
+            binWriter.BaseStream.Position = 0;
+            binWriter.Write( RACK );
+            binWriter.Write( Channel );
+            binWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
+            Recipient.UDPClient.SendAsync( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
         internal void ReceiveAckWT( BinaryReader reader )

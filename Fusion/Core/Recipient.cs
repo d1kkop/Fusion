@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -6,21 +7,36 @@ using System.Net.Sockets;
 
 namespace Fusion
 {
-    public class Recipient
+    internal class Recipient
     {
-        UnreliableStream m_UnreliableStream;
-        Dictionary<byte, ReliableStream> m_ReliableStreams = new Dictionary<byte, ReliableStream>();
+        internal enum State
+        {
+            NotSet,
+            Connecting,
+            Connected,
+            Disconnected,
+            Lost,
+            Kicked
+        }
 
+        UnreliableStream m_UnreliableStream;
+        Dictionary<byte, ReliableStream> m_ReliableStreams;
+
+        internal bool IsServer { get; private set; }
+        internal State ConnectionState { get; }
         internal Node Node { get; }
         internal IPEndPoint EndPoint { get; }
         internal UdpClient UDPClient { get; }
 
         public Recipient( Node node, IPEndPoint endpoint, UdpClient recipient )
         {
+            IsServer  = false;
+            ConnectionState = State.NotSet;
             Node      = node;
             EndPoint  = endpoint;
             UDPClient = recipient;
             m_UnreliableStream = new UnreliableStream( this );
+            m_ReliableStreams  = new Dictionary<byte, ReliableStream>();
         }
 
         internal void Sync()
@@ -64,7 +80,7 @@ namespace Fusion
 
         }
 
-        internal void ReceiveDataWT( BinaryReader reader )
+        internal void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
             byte streamId = reader.ReadByte();
             switch (streamId)
@@ -83,7 +99,7 @@ namespace Fusion
                         }
                     }
                     if (streamId == ReliableStream.RID)
-                        stream.ReceiveDataWT( reader );
+                        stream.ReceiveDataWT( reader, writer );
                     else
                         stream.ReceiveAckWT( reader );
                 }
@@ -101,17 +117,57 @@ namespace Fusion
             }
         }
 
-        internal void FlushDataST()
+        internal void FlushDataST( BinaryWriter writer )
         {
             lock(m_ReliableStreams)
             {
                 foreach( var kvp in m_ReliableStreams)
                 {
                     ReliableStream stream = kvp.Value;
-                    stream.FlushST();
+                    stream.FlushST( writer );
                 }
             }
-            m_UnreliableStream.FlushST();
+            m_UnreliableStream.FlushST( writer );
+        }
+
+        internal void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
+        {
+            Debug.Assert( id < (byte)SystemPacketId.Count );
+            SystemPacketId enumId = (SystemPacketId)id;
+            switch ( enumId )
+            {
+                case SystemPacketId.IdPackRequest:
+                Node.GroupManager.ReceiveIdPacketRequestWT( reader, writer, endpoint, channel );
+                break;
+
+                case SystemPacketId.IdPackProvide:
+                Node.GroupManager.ReceiveIdPacketProvideWT( reader, writer, endpoint, channel );
+                break;
+
+                case SystemPacketId.CreateGroup:
+                Node.GroupManager.ReceiveGroupCreatedWT( reader, writer, endpoint, channel );
+                break;
+
+                case SystemPacketId.DestroyGroup:
+                Node.GroupManager.ReceiveGroupDestroyedWT( reader, writer, endpoint, channel );
+                break;
+
+                case SystemPacketId.DestroyAllGroups:
+                Node.GroupManager.ReceiveDestroyAllGroupsWT( reader, writer, endpoint, channel );
+                break;
+
+                case SystemPacketId.Connect:
+                break;
+
+                case SystemPacketId.Disconnect:
+                break;
+
+                case SystemPacketId.Count:
+                break;
+
+                default:
+                throw new Exception( "Invalid reliable packet id." );
+            }
         }
     }
 }

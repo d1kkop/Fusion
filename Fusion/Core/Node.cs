@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -13,23 +14,34 @@ namespace Fusion
         Unreliable
     }
 
-    public sealed class Node : IDisposable
+    public sealed class Node : Messagable, IDisposable
     {
         Thread m_SendThread;
         volatile bool m_IsClosing;
-        Dictionary<IPEndPoint, Recipient> m_Recipients = new Dictionary<IPEndPoint, Recipient>();
-        Dictionary<ushort, Listener> m_Listeners = new Dictionary<ushort, Listener>();
+        Dictionary<uint, Listener> m_Listeners;
+        Dictionary<IPEndPoint, Recipient> m_Recipients;
+
+        public GroupManager GroupManager { get; }
+        internal Recipient Server { get; private set; }
+        internal BinaryWriter BinWriter { get; private set; }
 
         public event Action<byte, byte [], IPEndPoint, byte> OnMessage;
+        public event Action<VariableGroup> OnGroupCreated;
+        public event Action<VariableGroup> OnGroupDestroyed;
 
         public Node()
         {
-            m_SendThread = new Thread( SendLoop );
+            m_Recipients = new Dictionary<IPEndPoint, Recipient>();
+            m_Listeners  = new Dictionary<uint, Listener>();
+            GroupManager = new GroupManager( this );
+            BinWriter    = new BinaryWriter( new MemoryStream() );
+            m_SendThread = new Thread( SyncLoopST );
             m_SendThread.Start();
         }
 
         public void Sync()
         {
+            GroupManager.Sync( BinWriter );
             lock (m_Recipients)
             {
                 foreach (var kvp in m_Recipients)
@@ -38,16 +50,28 @@ namespace Fusion
                     recipient.Sync();
                 }
             }
+            ProcessMessages();
         }
 
         public void Dispose()
         {
+            // TODO
+            GC.SuppressFinalize( this );
             m_IsClosing = true;
             if (m_SendThread != null)
             {
                 m_SendThread.Join();
                 m_SendThread = null;
             }
+            if (m_Listeners != null)
+            {
+                foreach (var kvp in m_Listeners)
+                {
+                    kvp.Value.Dispose();
+                }
+                m_Listeners = null;
+            }
+            BinWriter.Dispose();
         }
 
         public ushort AddListener( ushort port, int simulatePacketLoss = 0 )
@@ -124,9 +148,9 @@ namespace Fusion
 
         public void Send( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
         {
-            if (id < 20)
+            if (id < (byte) SystemPacketId.Count)
             {
-                throw new Exception( "Id's 0 to 19 are reserved." );
+                throw new Exception( $"Id's 0 to {(byte)SystemPacketId.Count} are reserved." );
             }
 
             lock (m_Recipients)
@@ -171,8 +195,9 @@ namespace Fusion
             //   try
             //   {
             using (BinaryReader reader = new BinaryReader( new MemoryStream( data, false ) ))
+            using (BinaryWriter writer = new BinaryWriter( new MemoryStream() ))
             {
-                recipient.ReceiveDataWT( reader );
+                recipient.ReceiveDataWT( reader, writer );
             }
             //   } catch (Exception e)
             {
@@ -180,25 +205,46 @@ namespace Fusion
             }
         }
 
-        void SendLoop()
+        void SyncLoopST()
         {
-            while (!m_IsClosing)
+            using (BinaryWriter binWriter = new BinaryWriter( new MemoryStream() ))
             {
-                lock (m_Recipients)
+                while (!m_IsClosing)
                 {
-                    foreach (var kvp in m_Recipients)
+                    lock (m_Recipients)
                     {
-                        Recipient recipient = kvp.Value;
-                        recipient.FlushDataST();
+                        foreach (var kvp in m_Recipients)
+                        {
+                            Recipient recipient = kvp.Value;
+                            recipient.FlushDataST( binWriter );
+                        }
                     }
+                    GroupManager.Sync( binWriter );
+                    Thread.Sleep( 30 );
                 }
-                Thread.Sleep( 30 );
             }
         }
+
+        internal bool IsSendThread()
+        {
+            return Thread.CurrentThread.ManagedThreadId == m_SendThread.ManagedThreadId;
+        }
+
+        // ---- Events ---------------------------------------------------------------------------------------
 
         internal void RaiseOnMessage( byte id, byte[] data, IPEndPoint endpoint, byte channel )
         {
             OnMessage?.Invoke( id, data, endpoint, channel );
+        }
+
+        internal void RaiseOnGroupCreated( VariableGroup group )
+        {
+            OnGroupCreated?.Invoke( group );
+        }
+
+        internal void RaiseOnGroupDestroyed( VariableGroup group )
+        {
+            OnGroupDestroyed?.Invoke( group );
         }
     }
 }

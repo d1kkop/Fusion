@@ -24,5 +24,20 @@ namespace Fusion
             internal VariableGroup m_Group;
         };
 
+        Dictionary<uint, VariableGroup> m_Groups = new Dictionary<uint, VariableGroup>();
+
+        internal void AddUpdatable( Updatable updatable )
+        {
+            if (!m_Groups.TryGetValue( updatable.Group.Id, out VariableGroup group ))
+            {
+                group = updatable.Group;
+                m_Groups.Add( updatable.Group.Id, group );
+            }
+        }
+
+        internal void FlushST()
+        {
+
+        }
     }
 }

@@ -56,7 +56,7 @@ namespace Fusion
             m_UnreliableStream.Sync();
         }
 
-        internal void Send( byte id, byte[] data, byte channel, SendMethod sendMethod )
+        internal void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
         {
             switch ( sendMethod)
             {
@@ -71,7 +71,7 @@ namespace Fusion
                             m_ReliableStreams.Add( channel, stream );
                         }
                     }
-                    stream.AddMessage( id, data );
+                    stream.AddMessage( id, data, trace );
                 }
                 break;
 

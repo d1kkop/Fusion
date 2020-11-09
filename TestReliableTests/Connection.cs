@@ -1,7 +1,11 @@
 ﻿using Fusion;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace TestReliable.Tests
 {
@@ -31,7 +35,6 @@ namespace TestReliable.Tests
                 };
                 server.OnReceptionError += ( int error ) => serverError = true;
 
-
                 client.Connect( "localhost", 7005, "wrong pw" );
                 server.Host( 7005, 1, "my custom pw" );
 
@@ -48,7 +51,7 @@ namespace TestReliable.Tests
         }
 
         [TestMethod()]
-        public async void ConnectWithTooManyClients()
+        public async Task ConnectWithTooManyClients()
         {
             await using (ConnectedNode server = new ConnectedNode())
             {
@@ -90,22 +93,31 @@ namespace TestReliable.Tests
                     Thread.Sleep( 30 );
                 }
 
-                clients.ForEach( async (c) => await c.DisposeAsync() );
+                clients.ForEach( async ( c ) => await c.DisposeAsync() );
             }
         }
 
         [TestMethod()]
-        public async void ConnectWithEverythingFine()
+        public async Task ConnectWith1000Connections()
         {
+            int numDisconnectsServer = 0;
+            int numDisconnectsClient = 0;
             await using (var server = new ConnectedNode())
             {
                 ushort port = 7008;
-                int numClients   = 100;
-                int numConnected = 0;
+                int numClients   = 1024;
+                int numConnectedOnClient = 0;
+                int numConnectedOnServer = 0;
 
                 server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                 {
                     Assert.IsTrue( res == ConnectResult.Succes );
+                    numConnectedOnServer++;
+                };
+                server.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                {
+                    Assert.IsTrue( res == DisconnectReason.Requested );
+                    numDisconnectsServer++;
                 };
                 server.OnReceptionError += ( int error ) => Assert.IsFalse( true );
                 server.Host( port, (ushort)numClients, "my custom pw 9918" );
@@ -117,23 +129,136 @@ namespace TestReliable.Tests
                     client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                     {
                         Assert.IsTrue( res == ConnectResult.Succes );
-                        numConnected++;
+                        numConnectedOnClient++;
                     };
-
+                    client.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                    {
+                        Assert.IsTrue( res == DisconnectReason.Requested );
+                        numDisconnectsClient++;
+                    };
                     client.OnReceptionError += ( int error ) => Assert.IsFalse( true );
                     client.Connect( "localhost", port, "my custom pw 9918" );
                     clients.Add( client );
                 }
 
-                while (numConnected != numClients)
+                while (numConnectedOnClient != numClients || numConnectedOnServer != numClients)
                 {
                     clients.ForEach( c => c.Sync() );
                     server.Sync();
                     Thread.Sleep( 30 );
-                } 
+                }
 
                 clients.ForEach( async c => await c.DisposeAsync() );
-                Assert.IsTrue( numClients == numConnected );
+
+                // Wait until server has received all client disconnects (this might not always work if not all messages could be send within a second).
+                int k = 0;
+                while (numDisconnectsServer != numClients && k++<1000) //~30sec max
+                {
+                    server.Sync();
+                    Thread.Sleep( 30 );
+                }
+
+                Assert.IsTrue( numClients == numConnectedOnClient );
+                if (numClients != numDisconnectsServer)
+                {
+                    Assert.Inconclusive( $"Num disconnects ({numDisconnectsServer}) did not match expected ({numClients})." );
+                }
+            }
+        }
+
+
+        [TestMethod()]
+        public async Task ConnectWith1000ConnectionsComingAndGoing()
+        {
+            int numTimeouts = 0;
+            await using (var server = new ConnectedNode())
+            {
+                ushort port = 7008;
+                int numClients   = 2048;
+
+                //Server
+                {
+                    server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                    {
+                        Assert.IsTrue( res == ConnectResult.Succes );
+                    };
+                    server.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                    {
+                        Assert.IsTrue( res == DisconnectReason.Requested || res == DisconnectReason.Unreachable );
+                        if (res == DisconnectReason.Unreachable)
+                            numTimeouts++;
+                    };
+                    server.OnReceptionError += ( int error ) => Assert.IsFalse( true );
+                    server.Host( port, (ushort)numClients, "NicePW" );
+                }
+
+                List<ConnectedNode> clients = new List<ConnectedNode>();
+                List<ConnectedNode> deadClients = new List<ConnectedNode>();
+                Stopwatch sw = new Stopwatch();
+                sw.Start();
+                Random r = new Random();
+                while (sw.Elapsed.Seconds<20)
+                {
+                    deadClients.Clear();
+
+                    // Create new client
+                    if ( r.Next(3)==0 )
+                    {
+                        bool invalidPw = r.Next(3)==0;
+                        ConnectedNode client = new ConnectedNode();
+                        if (!invalidPw)
+                        {
+                            client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                            {
+                                Assert.IsTrue( res == ConnectResult.Succes || res == ConnectResult.MaxUsers || res == ConnectResult.Timedout );
+                            };
+                        }
+                        else
+                        {
+                            client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                            {
+                                Assert.IsTrue( res == ConnectResult.InvalidPw );
+                            };
+                        }
+                        client.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                        {
+                            Assert.IsTrue( res == DisconnectReason.Requested );
+                            deadClients.Add( rec.ConnectedNode );
+                        };
+                        client.OnReceptionError += ( int error ) => Assert.IsFalse( true );
+
+
+                        if ( invalidPw)
+                            client.Connect( "localhost", port, "THIS A WRONG PW!!" );
+                        else
+                            client.Connect( "localhost", port, "NicePW" );
+
+                        clients.Add( client );
+                    }
+
+                    // disconnect client from server
+                    if ( r.Next(5)==0)
+                    {
+                        if ( clients.Count != 0 )
+                        {
+                            int t = r.Next(0, clients.Count);
+                            await clients[t].DisposeAsync();
+                            clients.RemoveAt( t );
+                        }
+                    }
+
+                    clients.ForEach( c => c.Sync() );
+                    deadClients.ForEach( dc => clients.Remove( dc ) );
+                    server.Sync();
+                    Thread.Sleep( 30 );
+                }
+
+                clients.ForEach( async c => await c.DisposeAsync() );
+            }
+
+            if ( numTimeouts != 0 )
+            {
+                Assert.Inconclusive( $"Num timetouts not 0, namely: {numTimeouts}" );
             }
         }
     }

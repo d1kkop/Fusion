@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Fusion
 {
@@ -138,17 +139,32 @@ namespace Fusion
             }
         }
 
-        public void Send( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
+        public void SendUnreliable( byte id, byte[] data, IPEndPoint target = null, IPEndPoint except = null )
+        {
+            SendPrivate( id, data, 0, SendMethod.Unreliable, target, except, false );
+        }
+
+        public void SendReliable( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
+        {
+            if (channel == ReliableStream.SystemChannel)
+            {
+                throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
+            }
+            SendPrivate( id, data, channel, SendMethod.Reliable, target, except, false );
+        }
+
+        public DeliveryTrace SendReliableWithTrace( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
             if ( channel == ReliableStream.SystemChannel )
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
-            SendPrivate( id, data, channel, sendMethod, target, except );
+            return SendPrivate( id, data, channel, SendMethod.Reliable, target, except, true );
         }
 
-        internal void SendPrivate( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
+        internal DeliveryTrace SendPrivate( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null, bool traceDelivery = false )
         {
+            DeliveryTrace dt = traceDelivery ? new DeliveryTrace() : null;
             lock (m_Recipients)
             {
                 if (target != null)
@@ -156,7 +172,7 @@ namespace Fusion
                     Recipient recipient;
                     if (m_Recipients.TryGetValue( target, out recipient ))
                     {
-                        recipient.Send( id, data, channel, sendMethod );
+                        recipient.Send( id, data, channel, sendMethod, dt );
                     }
                 }
                 else
@@ -166,13 +182,14 @@ namespace Fusion
                         Recipient recipient = kvp.Value;
                         if (recipient.EndPoint == except)
                             continue;
-                        recipient.Send( id, data, channel, sendMethod );
+                        recipient.Send( id, data, channel, sendMethod, dt );
                     }
                 }
             }
+            return dt;
         }
 
-        internal void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )
+        internal virtual void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )
         {
             if (endpoint == null || endpoint == null || client == null)
                 return;

@@ -69,17 +69,20 @@ namespace Fusion
     {
         object m_DisconnectLock = new object();
 
+        internal long LastReceivedPacketMs { get; private set; }
+
         public bool IsServer { get; private set; }
         public ConnectionState ConnectionState { get; set; }
         public bool IsConnected => ConnectResult == ConnectResult.Succes;
         public ConnectResult ConnectResult { get; private set; }
         public DisconnectReason DisconnectReason { get; private set; }
-        internal ConnectedNode ConnectedNode => Node as ConnectedNode;
+        public ConnectedNode ConnectedNode => Node as ConnectedNode;
 
         internal ConnectedRecipient( ConnectedNode node, IPEndPoint endpoint, UdpClient udpClient ):
             base( node, endpoint, udpClient)
         {
             IsServer  = false;
+            LastReceivedPacketMs = node.Stopwatch.ElapsedMilliseconds;
             ConnectionState = ConnectionState.NotSet;
         }
 
@@ -87,6 +90,8 @@ namespace Fusion
         {
             Debug.Assert( channel == ReliableStream.SystemChannel );
             Debug.Assert( id < (byte)SystemPacketId.Count );
+
+            LastReceivedPacketMs = ConnectedNode.Stopwatch.ElapsedMilliseconds;
 
             // If we receive a disconnect packet, we set this state to disconnected so that other packets are processed. 
             // This happens in the WT thread.
@@ -184,8 +189,9 @@ namespace Fusion
                 return;
             }
 
-            // In p2p, it may be set already from an accept message.
-            if (ConnectionState == ConnectionState.NotSet)
+            // In client/server the state on receive side is NotSet.
+            // In p2p, the state might be either in NotSet or Initiating becuase both parties try to connect to eachother.
+            if (ConnectionState == ConnectionState.NotSet || ConnectionState == ConnectionState.Initiating)
             {
                 ConnectionState = ConnectionState.Active;
                 ConnectResult   = ConnectResult.Succes;
@@ -201,8 +207,8 @@ namespace Fusion
 
         internal void ReceiveConnectInvalidPwWT( BinaryReader reader, BinaryWriter writer, byte channel )
         {
-            // Consider both client/server ne p2p situation.
-            if (ConnectionState == ConnectionState.NotSet)
+            // In p2p, the connectState might have already changed to active as both parties try to connect to eachother.
+            if (ConnectionState == ConnectionState.Initiating)
             {
                 ConnectResult = ConnectResult.InvalidPw;
                 ConnectedNode.AddMessage( new ConnectMessage( ConnectedNode, this ) );
@@ -216,8 +222,8 @@ namespace Fusion
 
         internal void ReceiveConnectMaxUsersWT( BinaryReader reader, BinaryWriter writer, byte channel )
         {
-            // Consider both client/server ne p2p situation.
-            if (ConnectionState == ConnectionState.NotSet)
+            // In p2p, the connectState might have already changed to active as both parties try to connect to eachother.
+            if (ConnectionState == ConnectionState.Initiating)
             {
                 ConnectResult = ConnectResult.MaxUsers;
                 ConnectedNode.AddMessage( new ConnectMessage( ConnectedNode, this ) );
@@ -226,10 +232,9 @@ namespace Fusion
 
         internal void ReceiveConnectAcceptedWT( BinaryReader reader, BinaryWriter writer, byte channel )
         {
-            // Consider both client/server ne p2p situation.
-            if (ConnectionState == ConnectionState.NotSet)
+            // In p2p, the connectState might have already changed to active as both parties try to connect to eachother.
+            if (ConnectionState == ConnectionState.Initiating)
             {
-                Debug.Assert( ConnectionState == ConnectionState.Initiating );
                 ConnectionState = ConnectionState.Active;
                 ConnectResult   = ConnectResult.Succes;
                 ConnectedNode.AddMessage( new ConnectMessage( ConnectedNode, this ) );
@@ -243,7 +248,6 @@ namespace Fusion
 
         internal void ReceiveDisconnectWT( BinaryReader reader, BinaryWriter writer, byte channel )
         {
-            // Consider both client/server ne p2p situation.
             if (ConnectionState == ConnectionState.Active)
             {
                 ConnectionState  = ConnectionState.Disconnected;
@@ -252,18 +256,34 @@ namespace Fusion
             }
         }
 
-        internal void SendDisconnect( BinaryWriter writer, byte channel )
+        internal DeliveryTrace SendDisconnect( BinaryWriter writer, byte channel, bool traceDelivery )
         {
+            // Need disconnect lock because DisconnectReason can be set from main thread or from receiving thread.
             lock (m_DisconnectLock)
             {
                 if ( ConnectionState != ConnectionState.Active )
                 {
-                    return;
+                    return null;
                 }
                 ConnectionState  = ConnectionState.Disconnected;
                 DisconnectReason = DisconnectReason.Requested;
             }
-            ConnectedNode.SendPrivate( (byte)SystemPacketId.Disconnect, null, channel, SendMethod.Reliable, EndPoint );
+            return ConnectedNode.SendPrivate( (byte)SystemPacketId.Disconnect, null, channel, SendMethod.Reliable, EndPoint, null, traceDelivery );
+        }
+
+        internal void MarkAsLostConnectionWT()
+        {
+            // Need disconnect lock because DisconnectReason can be set from main thread or from receiving thread.
+            lock (m_DisconnectLock)
+            {
+                if (ConnectionState != ConnectionState.Active)
+                {
+                    return;
+                }
+                ConnectionState  = ConnectionState.Disconnected;
+                DisconnectReason = DisconnectReason.Unreachable;
+            }
+            ConnectedNode.AddMessage( new DisconnectMessage( ConnectedNode, this ) );
         }
     }
 }

@@ -25,7 +25,7 @@ namespace TestReliable.Tests
                 n2.AddListener( 3005 );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                n1.Send( 20, data );
+                n1.SendReliable( 20, data );
 
                 n2.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -59,7 +59,7 @@ namespace TestReliable.Tests
                 n2.AddRecipient( dstPort, "localhost", boundPort );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                n2.Send( 255, data );
+                n2.SendReliable( 255, data );
 
                 n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -95,7 +95,7 @@ namespace TestReliable.Tests
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
                 int numMsgsSent = 10000;
                 for (int i = 0;i < numMsgsSent;i++)
-                    n2.Send( 128, data );
+                    n2.SendReliable( 128, data );
 
                 n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -132,7 +132,7 @@ namespace TestReliable.Tests
                 n1.AddRecipient( boundPort, "localhost", dstPort );
                 n2.AddListener( dstPort, packetLoss );
                 n2.AddRecipient( dstPort, "localhost", boundPort );
-                int numMsgsSent = 10000;
+                int numMsgsSent = 100;
                 Random rand = new Random();
 
                 Dictionary<byte, ChannelData> channelDataN1 = new Dictionary<byte, ChannelData>();
@@ -166,7 +166,7 @@ namespace TestReliable.Tests
                     ChannelData cd = kvp.Value;
                     for (int i = 0;i < cd.messages.Count;i++)
                     {
-                        n1.Send( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key );
+                        n1.SendReliable( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key, null, null );
                     }
                 }
                 foreach (var kvp in channelDataN2)
@@ -174,7 +174,7 @@ namespace TestReliable.Tests
                     ChannelData cd = kvp.Value;
                     for (int i = 0;i < cd.messages.Count;i++)
                     {
-                        n2.Send( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key );
+                        n2.SendReliable( cd.packIds[i], Encoding.UTF8.GetBytes( cd.messages[i] ), kvp.Key, null, null );
                     }
                 }
 

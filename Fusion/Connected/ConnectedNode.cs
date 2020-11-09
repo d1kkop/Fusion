@@ -1,20 +1,30 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Fusion
 {
     public class ConnectedNode : Node, IAsyncDisposable
     {
+
+        internal const int  m_ConnecTimeoutMs           = 20000;
+        internal const int  m_KeepAliveMs               = 5000;
+        internal const int  m_LostTimeoutMs             = 10000;
+        internal const int  m_MaintenanceIntvervalMs    = 2000;
+
         internal bool m_IsServer  = false;
         internal bool m_IsClient  = false;
         internal bool m_IsDisposed = false;
 
+        internal long m_LastCheckLostConnectionsMs = 0;
+        internal Stopwatch  Stopwatch { get; private set; }
+        internal bool RemoveLostConnections { get; set; } = false;
+
         public string Password { get; set; }
         public ushort MaxUsers { get; set; }
-
         public GroupManager GroupManager { get; }
         public ConnectedRecipient Server { get; private set; }
 
@@ -25,14 +35,16 @@ namespace Fusion
 
         public ConnectedNode()
         {
+            Stopwatch    = new Stopwatch();
             GroupManager = new GroupManager( this );
+            Stopwatch.Start();
         }
 
         public void Connect( string host, ushort port, string pw = "" )
         {
             if (m_IsClient || m_IsServer)
             {
-                throw new InvalidOperationException( "First disconnect." );
+                throw new InvalidOperationException( "Cannot reuse a node. Dispose and create a new one." );
             }
             m_IsClient = true;
             (AddRecipient( host, port ) as ConnectedRecipient).SendConnect( BinWriter, pw );
@@ -42,12 +54,17 @@ namespace Fusion
         {
             if (m_IsClient || m_IsServer)
             {
-                throw new InvalidOperationException( "First disconnect." );
+                throw new InvalidOperationException( "Cannot reuse a node. Dispose and create a new one." );
             }
             m_IsServer = true;
             MaxUsers   = maxUsers;
             Password   = password;
             AddListener( port );
+        }
+
+        public void Migrate()
+        {
+            // TODO
         }
 
         public async ValueTask DisposeAsync()
@@ -62,15 +79,20 @@ namespace Fusion
             m_IsDisposed = true;
             if (disposing)
             {
+                List<DeliveryTrace> disconnectDeliveries = new List<DeliveryTrace>();
                 lock (m_Recipients)
                 {
                     foreach (var kvp in m_Recipients)
                     {
                         ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
-                        recipient.SendDisconnect( BinWriter, ReliableStream.SystemChannel );
+                        DeliveryTrace dt = recipient.SendDisconnect( BinWriter, ReliableStream.SystemChannel, true );
+                        if (dt != null)
+                        {
+                            disconnectDeliveries.Add( dt );
+                        }
                     }
                 }
-                Thread.Sleep( 1000 ); // Await disconnect messages to be transmitted.
+                disconnectDeliveries.ForEach( dt => dt.WaitAll( 1000 ) );
             }
             base.Dispose( disposing );
         }
@@ -93,7 +115,42 @@ namespace Fusion
         {
             return new ConnectedRecipient( node as ConnectedNode, endpoint, udpClient );
         }
+        internal override void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )
+        {
+            if (RemoveLostConnections) CheckLostConnectionsWT();
+            base.ReceiveDataWT( data, endpoint, client );
+        }
 
+        void CheckLostConnectionsWT()
+        {
+            long timeNowMs = Stopwatch.ElapsedMilliseconds;
+            if (timeNowMs - m_LastCheckLostConnectionsMs < m_MaintenanceIntvervalMs)
+            {
+                return;
+            }
+            m_LastCheckLostConnectionsMs = timeNowMs;
+            List<ConnectedRecipient> deadRecipients = null;
+            lock(m_Recipients)
+            {
+                foreach ( var kvp in m_Recipients)
+                {
+                    ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
+                    if ( timeNowMs - recipient.LastReceivedPacketMs > m_LostTimeoutMs)
+                    {
+                        if (deadRecipients == null) deadRecipients = new List<ConnectedRecipient>();
+                        deadRecipients.Add( recipient );
+                    }
+                }
+                if (deadRecipients != null)
+                {
+                    deadRecipients.ForEach( recipient =>
+                    {
+                        m_Recipients.Remove( recipient.EndPoint );
+                        recipient.MarkAsLostConnectionWT();
+                    });
+                }
+            }
+        }
 
         // --- Events ------------------------------------------------------------------------------------------------------
 

@@ -23,7 +23,7 @@ namespace TestReliable.Tests
                 n2.AddListener( 2005 );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                n1.Send( 20, data, 0, SendMethod.Unreliable );
+                n1.SendUnreliable( 20, data );
 
                 n2.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -59,7 +59,7 @@ namespace TestReliable.Tests
                 n2.AddRecipient( dstPort, "localhost", boundPort );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                n2.Send( 20, data, 0, SendMethod.Unreliable );
+                n2.SendUnreliable( 20, data );
 
                 n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -97,7 +97,7 @@ namespace TestReliable.Tests
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
                 int numMsgsSent = 10000;
                 for (int i = 0;i < numMsgsSent;i++)
-                    n2.Send( 20, data, 0, SendMethod.Unreliable );
+                    n2.SendUnreliable( 20, data );
 
                 n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {

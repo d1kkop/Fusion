@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
+using System.Threading;
 
 namespace Fusion
 {
@@ -21,6 +23,90 @@ namespace Fusion
         Count
     }
 
+    public class DeliveryTrace
+    {
+        internal List<Recipient> m_Targets   = new List<Recipient>();
+        internal List<Recipient> m_Delivered = new List<Recipient>();
+
+        public bool PeekSpecific( Recipient recipient )
+        {
+            lock(this)
+            {
+                return m_Delivered.Contains( recipient );
+            }
+        }
+
+        public bool PeekAll()
+        {
+            bool result = m_Targets.Count == m_Delivered.Count;
+#if DEBUG
+            if ( result )
+            {
+                Debug.Assert( m_Targets.All( t => m_Delivered.Contains( t ) ) );
+            }
+#endif
+            return result;
+        }
+
+        public void WaitSpecific( Recipient recipient )
+        {
+            bool result = WaitSpecific( recipient, 0 );
+            Debug.Assert( result );
+        }
+
+        public bool WaitSpecific( Recipient recipient, int timeout )
+        {
+            lock (this)
+            {
+                if (!m_Targets.Contains( recipient ))
+                    throw new InvalidOperationException( "Recipient is not in list of targets." );
+                Stopwatch sw = new Stopwatch();
+                while (!m_Delivered.Contains( recipient ))
+                {
+                    if (timeout <= 0)
+                    {
+                        Monitor.Wait( this );
+                    }
+                    else
+                    {
+                        if (!Monitor.Wait( this, timeout-(int)sw.ElapsedMilliseconds ))
+                            return false;
+                    }
+                }
+                return true;
+            }
+        }
+
+        public void WaitAll()
+        {
+            bool result = WaitAll(0);
+            Debug.Assert( result );
+        }
+
+        public bool WaitAll(int timeout)
+        {
+            if (PeekAll())
+                return true;
+            lock (this)
+            {
+                Stopwatch sw = new Stopwatch();
+                while (!PeekAll())
+                {
+                    if (timeout <= 0)
+                    {
+                        Monitor.Wait( this );
+                    }
+                    else
+                    {
+                        if (!Monitor.Wait( this, timeout-(int)sw.ElapsedMilliseconds ))
+                            return false;
+                    }
+                }
+                return true;
+            }
+        }
+    }
+
     public class ReliableStream
     {
         public const byte SystemChannel = 255;
@@ -34,6 +120,7 @@ namespace Fusion
             internal uint m_Sequence;
             internal byte m_Id;
             internal byte [] m_Payload;
+            internal DeliveryTrace m_Trace;
         }
 
         struct RecvMessage
@@ -62,7 +149,7 @@ namespace Fusion
         DataRT m_ReliableDataRT;
 
         internal Recipient Recipient { get; }
-        internal byte Channel { get;  }
+        internal byte Channel { get; }
 
         internal ReliableStream( Recipient recipient, byte channel )
         {
@@ -72,16 +159,25 @@ namespace Fusion
             m_ReliableDataRT = new DataRT();
         }
 
-        internal void AddMessage( byte packetId, byte[] payload )
+        internal void AddMessage( byte packetId, byte[] payload, DeliveryTrace trace )
         {
-            if ( payload != null && payload.Length > MaxPayloadSize)
+            if (payload != null && payload.Length > MaxPayloadSize)
                 throw new ArgumentException( "Payload null or exceeding max size of " + MaxPayloadSize );
 
             // Construct message
             SendMessage rm = new SendMessage();
             rm.m_Id        = packetId;
             rm.m_Payload   = payload;
+            rm.m_Trace     = trace;
             rm.m_Sequence  = m_ReliableDataMT.m_Newest++;
+
+            if ( trace != null )
+            {
+                lock(trace) // Need lock because on local machine, we may receive in a different thread on a recipient in this trace already.
+                {
+                    trace.m_Targets.Add( Recipient );
+                }
+            }
 
             // Add to list of messages thread safely
             lock (m_ReliableDataMT.m_Messages)
@@ -92,7 +188,7 @@ namespace Fusion
 
         internal void Sync()
         {
-            lock(m_ReliableDataRT.m_Messages)
+            lock (m_ReliableDataRT.m_Messages)
             {
                 while (m_ReliableDataRT.m_Messages.Count !=0)
                 {
@@ -102,7 +198,7 @@ namespace Fusion
             }
         }
 
-        internal void FlushST(BinaryWriter binWriter)
+        internal void FlushST( BinaryWriter binWriter )
         {
             // RID(1) | ChannelID(1) | Sequence(4) | MsgLen(2) | Msg(variable)
 
@@ -162,7 +258,7 @@ namespace Fusion
 
                     // Peek if message is system message. If so, handle system messages directly in the worker thread.
                     // However, do NOT spawn new worker thread as that could invalidate the reliability order.
-                    if ( Channel == ReliableStream.SystemChannel )
+                    if (Channel == ReliableStream.SystemChannel)
                     {
                         Debug.Assert( id < (byte)SystemPacketId.Count );
                         Recipient.ReceiveSystemMessageWT( reader, writer, id, Recipient.EndPoint, Channel );
@@ -195,7 +291,7 @@ namespace Fusion
             FlushAckWT( writer );
         }
 
-        void FlushAckWT(BinaryWriter binWriter)
+        void FlushAckWT( BinaryWriter binWriter )
         {
             binWriter.BaseStream.Position = 0;
             binWriter.Write( RACK );
@@ -212,10 +308,20 @@ namespace Fusion
                 int numPacketsToDrop = (int)(ack - m_ReliableDataRT.m_AckExpected) + 1;
                 lock (m_ReliableDataMT.m_Messages)
                 {
+                    // If detect lost connection is set too low, we may receive outdated data when a connection was removed.
+                    // This makes this assert hit as we get acks for messages that were not sent.
                     Debug.Assert( m_ReliableDataMT.m_Messages.Count >= numPacketsToDrop );
                     while (numPacketsToDrop!=0)
                     {
-                        m_ReliableDataMT.m_Messages.Dequeue();
+                        SendMessage sm = m_ReliableDataMT.m_Messages.Dequeue();
+                        if (sm.m_Trace != null)
+                        {
+                            lock (sm.m_Trace)
+                            {
+                                sm.m_Trace.m_Delivered.Add( Recipient );
+                                Monitor.PulseAll( sm.m_Trace );
+                            }
+                        }
                         numPacketsToDrop--;
                     }
                 }

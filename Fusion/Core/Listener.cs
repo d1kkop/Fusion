@@ -1,58 +1,110 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Xml.Serialization;
 
 namespace Fusion
 {
-    internal sealed class Listener : IDisposable
+    // --- Message Structs ---------------------------------------------------------------------------------------------------
+
+    class ReceptionError : IMessage
     {
+        Node m_Node;
+        int m_Error;
+
+        public ReceptionError( Node node, int error )
+        {
+            m_Node  = node;
+            m_Error = error;
+        }
+        public void Process()
+        {
+            m_Node.RaiseOnReceptionError( m_Error );
+        }
+    }
+
+    public class Listener : IDisposable
+    {
+        internal Node Node { get; private set; }
         internal IPEndPoint LocalEndPoint { get; }
         internal UdpClient UDPClient { get; }
         internal int SimulatePacketLoss { get; set; }
         internal int CurrentWorkingThreadId { get; set; }
         internal BinaryWriter BinWriter { get; private set; }
 
-        Node   m_Node;
+        bool   m_Disposed;
+        volatile bool m_IsClosing;
+        Thread m_ListenThread;
         Random m_Random = new Random();
 
         internal Listener( Node node, UdpClient listener )
         {
-            BinWriter = new BinaryWriter( new MemoryStream() );
-            m_Node = node;
+            Node = node;
             UDPClient = listener;
+            BinWriter = new BinaryWriter( new MemoryStream() );
             LocalEndPoint = (IPEndPoint)listener.Client.LocalEndPoint;
-            UDPClient.BeginReceive( ReceiveCallbackWT, null );
+            m_ListenThread = new Thread( ThreadCallbackWT );
+            m_ListenThread.Start();
         }
 
-        void ReceiveCallbackWT( IAsyncResult result )
+        void ThreadCallbackWT()
         {
             // Ensure working threadId is updated before anything else is executed from working thread.
             CurrentWorkingThreadId = Thread.CurrentThread.ManagedThreadId;
 
-            // Check if we want to simulate packet loss.
-            bool skipPacket = SimulatePacketLoss > 0 && m_Random.Next( 0, SimulatePacketLoss )==0;
-
-            // Receive data.
-            IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, 0);
-            byte [] data = UDPClient.EndReceive( result, ref endpoint );
-
-            // If not skip packet, handle the packet from worker thread.
-            if (!skipPacket)
+            while (!m_IsClosing)
             {
-                m_Node.ReceiveDataWT( data, endpoint, UDPClient );
-            }
+                byte [] data;
+                IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, 0);
+                try
+                { 
+                    data = UDPClient.Receive( ref endpoint );
 
-            // Restart receiving.
-            UDPClient.BeginReceive( ReceiveCallbackWT, null );
+                } catch (SocketException e)
+                {
+                    if (e.SocketErrorCode != SocketError.Interrupted)
+                    {
+                        // Some error or force closed.
+                        Node.AddMessage( new ReceptionError( Node, e.ErrorCode ) );
+                    }
+                    break;
+                }
+
+                // Check if we want to simulate packet loss.
+                bool skipPacket = SimulatePacketLoss > 0 && m_Random.Next( 0, SimulatePacketLoss )==0;
+
+                // If not skip packet, handle the packet from worker thread.
+                if (!skipPacket)
+                {
+                    Node.ReceiveDataWT( data, endpoint, UDPClient );
+                }
+            }
         }
 
         public void Dispose()
         {
+            Dispose( true );
             GC.SuppressFinalize( this );
-            UDPClient.Dispose();
-            BinWriter.Dispose();
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (m_Disposed)
+                return;
+
+            if (disposing)
+            {
+                m_IsClosing = true;
+                UDPClient.Close();
+                m_ListenThread.Join();
+                UDPClient.Dispose();
+                BinWriter.Dispose();
+            }
+
+            m_Disposed = true;
         }
     }
 }

@@ -7,6 +7,8 @@ using System.Net;
 
 namespace Fusion
 {
+    // --- Message Structs ---------------------------------------------------------------------------------------------------
+
     class GroupCreated : IMessage
     {
         VariableGroup m_Group;
@@ -37,6 +39,8 @@ namespace Fusion
         }
     }
 
+    // --- Class ---------------------------------------------------------------------------------------------------
+
     public class GroupManager
     {
         const uint GroupIdsToProvidePerRequest = 100;
@@ -50,10 +54,10 @@ namespace Fusion
         List<VariableGroup> m_PendingGroups;
         Dictionary<uint, VariableGroup> m_Groups;
 
-        internal Node Node { get; }
+        internal ConnectedNode Node { get; }
         internal bool RelayGroupMessages { get; set; }
 
-        internal GroupManager( Node node, bool relayGroupMessages = false )
+        internal GroupManager( ConnectedNode node, bool relayGroupMessages = false )
         {
             Node = node;
             RelayGroupMessages = relayGroupMessages;
@@ -61,7 +65,15 @@ namespace Fusion
             m_IdPacks       = new List<uint>();
             m_PendingGroups = new List<VariableGroup>();
             m_Groups        = new Dictionary<uint, VariableGroup>();
+        }
 
+        internal void Clear()
+        {
+            m_GroupIdCounter = 0;
+            m_LastIdPackRequestTime = 0;
+            m_Groups.Clear();
+            m_PendingGroups.Clear();
+            m_IdPacks.Clear();
         }
 
         public void CreateGroup( uint type, params UpdatableType [] updatableTypes )
@@ -73,7 +85,7 @@ namespace Fusion
         {
             if ( group.Owner != null)
             {
-                throw new Exception( "Trying to destroy a remote created group is not allowed. This can lead to unordered result in p2p graph." );
+                throw new InvalidOperationException( "Trying to destroy a remote created group is not allowed. This can lead to unordered result in p2p graph." );
             }
             bool groupWasDestroyed = false;
             lock(m_Groups)
@@ -100,9 +112,62 @@ namespace Fusion
             return nextGroupIdBase;
         }
 
+        void TryResolvePendingGroups( BinaryWriter writer )
+        {
+            while (m_PendingGroups.Count != 0 && m_IdPacks.Count != 0 && Node.Server != null)
+            {
+                // We have a pending group and an available Id. Resolve it.
+                VariableGroup group = m_PendingGroups[0];
+                m_PendingGroups.RemoveAt( 0 );
+                uint currentId = m_IdPacks[0];
+                group.AssignId( currentId );
+                lock (m_Groups)
+                {
+                    m_Groups.Add( currentId, group );
+                }
+                currentId++;
+                if (currentId % GroupManager.GroupIdsToProvidePerRequest == 0)
+                {
+                    // This is the id of the next pack. We do not know if that is valid.
+                    m_IdPacks.RemoveAt( 0 );
+                }
+                // Raise on group created (Id was connected locally).
+                Node.RaiseOnGroupCreated( group );
+                SendGroupCreated( writer, null, false, ReliableStream.SystemChannel, group.Type, group.Id, group.UpdateTypes );
+            }
+        }
+
+        void AutoRequestNewIdPackIfRunningOut()
+        {
+            if (Node.Server != null && Node.Server.ConnectionState == ConnectionState.Active)
+            {
+                if (m_Time.Elapsed.TotalSeconds - m_LastIdPackRequestTime > CheckIdPacksInterval
+                     || m_LastIdPackRequestTime == 0 /*Initially*/ )
+                {
+                    SendIdPacketRequest( Node.Server.EndPoint );
+
+                    // Initially send two, so that we have a buffer immediately without awaiting the check interval for a new request.
+                    if (m_LastIdPackRequestTime==0)
+                    {
+                        SendIdPacketRequest( Node.Server.EndPoint );
+                    }
+
+                    m_LastIdPackRequestTime = m_Time.Elapsed.TotalSeconds;
+                }
+            }
+        }
+
+        internal void Sync( BinaryWriter writer )
+        {
+            AutoRequestNewIdPackIfRunningOut();
+            TryResolvePendingGroups( writer );
+        }
+
+        // --- Messages ---------------------------------------------------------------------------------------------
+
         internal void SendIdPacketRequest( IPEndPoint endpoint )
         {
-            Node.Send( (byte)SystemPacketId.IdPackRequest, null, ReliableStream.SystemChannel, SendMethod.Reliable, endpoint );
+            Node.SendPrivate( (byte)SystemPacketId.IdPackRequest, null, ReliableStream.SystemChannel, SendMethod.Reliable, endpoint );
         }
 
         internal void ReceiveIdPacketRequestWT( BinaryReader reader, BinaryWriter writer, IPEndPoint endpoint, byte channel )
@@ -115,7 +180,7 @@ namespace Fusion
             uint idBase = GetNextGroupIdRange();
             writer.ResetPosition();
             writer.Write( idBase );
-            Node.Send( (byte)SystemPacketId.IdPackProvide, writer.GetData(), channel, SendMethod.Reliable, endpoint );
+            Node.SendPrivate( (byte)SystemPacketId.IdPackProvide, writer.GetData(), channel, SendMethod.Reliable, endpoint );
         }
 
         internal void ReceiveIdPacketProvideWT( BinaryReader reader, BinaryWriter writer, IPEndPoint endpoint, byte channel )
@@ -128,7 +193,7 @@ namespace Fusion
         {
             if (updateTypes.Length>255)
             {
-                throw new Exception( "Max updatables per variable group is 255" );
+                throw new InvalidOperationException( "Max updatables per variable group is 255" );
             }
             writer.ResetPosition();
             writer.Write( type );
@@ -141,12 +206,12 @@ namespace Fusion
             if (!endpointIsExcept)
             {
                 // Send only to endpoint.
-                Node.Send( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, endpoint );
             }
             else
             {
                 // To all but endpoint.
-                Node.Send( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, null, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, null, endpoint );
             }
         }
 
@@ -187,12 +252,12 @@ namespace Fusion
             if (!endpointIsExcept)
             {
                 // Send only to endpoint.
-                Node.Send( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, endpoint );
             }
             else
             {
                 // To all but endpoint.
-                Node.Send( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, null, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.CreateGroup, writer.GetData(), channel, SendMethod.Reliable, null, endpoint );
             }
         }
         internal void ReceiveGroupDestroyedWT( BinaryReader reader, BinaryWriter writer, IPEndPoint endpoint, byte channel )
@@ -217,12 +282,12 @@ namespace Fusion
             if (!endpointIsExcept)
             {
                 // Send only to endpoint.
-                Node.Send( (byte)SystemPacketId.DestroyAllGroups, null, channel, SendMethod.Reliable, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.DestroyAllGroups, null, channel, SendMethod.Reliable, endpoint );
             }
             else
             {
                 // To all but endpoint.
-                Node.Send( (byte)SystemPacketId.DestroyAllGroups, null, channel, SendMethod.Reliable, null, endpoint );
+                Node.SendPrivate( (byte)SystemPacketId.DestroyAllGroups, null, channel, SendMethod.Reliable, null, endpoint );
             }
         }
 
@@ -242,58 +307,6 @@ namespace Fusion
             if (m_RelayGroupMessages)
             {
                 SendDestroyAllGroups( writer, endpoint, true, channel );
-            }
-        }
-
-        internal void Sync( BinaryWriter writer )
-        {
-            AutoRequestNewIdPackIfRunningOut();
-            TryResolvePendingGroups( writer );
-        }
-
-        void TryResolvePendingGroups( BinaryWriter writer )
-        {
-            while (m_PendingGroups.Count != 0 && m_IdPacks.Count != 0 && Node.Server != null)
-            {
-                // We have a pending group and an available Id. Resolve it.
-                VariableGroup group = m_PendingGroups[0];
-                m_PendingGroups.RemoveAt(0);
-                uint currentId = m_IdPacks[0];
-                group.AssignId( currentId );
-                lock (m_Groups)
-                {
-                    m_Groups.Add( currentId, group );
-                }
-                currentId++;
-                if (currentId % GroupManager.GroupIdsToProvidePerRequest == 0)
-                {
-                    // This is the id of the next pack. We do not know if that is valid.
-                    m_IdPacks.RemoveAt( 0 );
-                }
-                // Raise on group created (Id was connected locally).
-                Node.RaiseOnGroupCreated( group );
-                SendGroupCreated( writer, null, false, ReliableStream.SystemChannel, group.Type, group.Id, group.UpdateTypes );
-            }
-        }
-
-        void AutoRequestNewIdPackIfRunningOut()
-        {
-            Debug.Assert( Node.IsSendThread() );
-            if (Node.Server != null && Node.Server.ConnectionState == Recipient.State.Connected)
-            {
-                if (m_Time.Elapsed.TotalSeconds - m_LastIdPackRequestTime > CheckIdPacksInterval
-                     || m_LastIdPackRequestTime == 0 /*Initially*/ )
-                {
-                    SendIdPacketRequest( Node.Server.EndPoint );
-
-                    // Initially send two, so that we have a buffer immediately without awaiting the check interval for a new request.
-                    if (m_LastIdPackRequestTime==0)
-                    {
-                        SendIdPacketRequest( Node.Server.EndPoint );
-                    }
-
-                    m_LastIdPackRequestTime = m_Time.Elapsed.TotalSeconds;
-                }
             }
         }
     }

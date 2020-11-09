@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
 using System.Net;
 
 namespace Fusion
@@ -17,10 +16,10 @@ namespace Fusion
         public uint Type { get; }
         public uint Id { get; private set; }
         public UpdatableType [] UpdateTypes { get; private set; }
-        internal Node Node { get; private set; }
+        internal ConnectedNode Node { get; private set; }
         internal bool IdIsAssigned => m_IdAssigned;
 
-        internal VariableGroup( Node node, IPEndPoint owner, uint typeId, uint id, params UpdatableType[] types )
+        internal VariableGroup( ConnectedNode node, IPEndPoint owner, uint typeId, uint id, params UpdatableType[] types )
         {
             Node  = node;
             Owner = owner;
@@ -60,7 +59,7 @@ namespace Fusion
                     m_Updatables.Add( new UpdatableMatrix4x4() );
                     break;
                     default:
-                    throw new Exception( "Invalid updatable size." );
+                    throw new InvalidOperationException( "Invalid updatable size." );
                 }
             }
         }

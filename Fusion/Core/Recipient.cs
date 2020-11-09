@@ -7,36 +7,40 @@ using System.Net.Sockets;
 
 namespace Fusion
 {
-    internal class Recipient
+    public class Recipient : IDisposable
     {
-        internal enum State
-        {
-            NotSet,
-            Connecting,
-            Connected,
-            Disconnected,
-            Lost,
-            Kicked
-        }
-
+        bool m_Disposed;
         UnreliableStream m_UnreliableStream;
         Dictionary<byte, ReliableStream> m_ReliableStreams;
 
-        internal bool IsServer { get; private set; }
-        internal State ConnectionState { get; }
         internal Node Node { get; }
         internal IPEndPoint EndPoint { get; }
         internal UdpClient UDPClient { get; }
 
-        public Recipient( Node node, IPEndPoint endpoint, UdpClient recipient )
+        internal Recipient( Node node, IPEndPoint endpoint, UdpClient recipient )
         {
-            IsServer  = false;
-            ConnectionState = State.NotSet;
             Node      = node;
             EndPoint  = endpoint;
             UDPClient = recipient;
             m_UnreliableStream = new UnreliableStream( this );
             m_ReliableStreams  = new Dictionary<byte, ReliableStream>();
+        }
+
+        public void Dispose()
+        {
+            Dispose( true );
+            GC.SuppressFinalize( this );
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (m_Disposed)
+                return;
+            if ( disposing )
+            {
+                UDPClient.Dispose();
+            }
+            m_Disposed = true;
         }
 
         internal void Sync()
@@ -130,43 +134,14 @@ namespace Fusion
             m_UnreliableStream.FlushST( writer );
         }
 
-        internal void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
+        virtual internal void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
         {
             Debug.Assert( id < (byte)SystemPacketId.Count );
             SystemPacketId enumId = (SystemPacketId)id;
             switch ( enumId )
             {
-                case SystemPacketId.IdPackRequest:
-                Node.GroupManager.ReceiveIdPacketRequestWT( reader, writer, endpoint, channel );
-                break;
-
-                case SystemPacketId.IdPackProvide:
-                Node.GroupManager.ReceiveIdPacketProvideWT( reader, writer, endpoint, channel );
-                break;
-
-                case SystemPacketId.CreateGroup:
-                Node.GroupManager.ReceiveGroupCreatedWT( reader, writer, endpoint, channel );
-                break;
-
-                case SystemPacketId.DestroyGroup:
-                Node.GroupManager.ReceiveGroupDestroyedWT( reader, writer, endpoint, channel );
-                break;
-
-                case SystemPacketId.DestroyAllGroups:
-                Node.GroupManager.ReceiveDestroyAllGroupsWT( reader, writer, endpoint, channel );
-                break;
-
-                case SystemPacketId.Connect:
-                break;
-
-                case SystemPacketId.Disconnect:
-                break;
-
-                case SystemPacketId.Count:
-                break;
-
                 default:
-                throw new Exception( "Invalid reliable packet id." );
+                throw new InvalidOperationException( "Invalid reliable packet id." );
             }
         }
     }

@@ -1,10 +1,6 @@
 ﻿using Fusion;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Text;
 using System.Threading;
 
 namespace TestReliable.Tests
@@ -15,28 +11,28 @@ namespace TestReliable.Tests
         [TestMethod()]
         public void CreateSingleVariableGroup()
         {
-            Node n1 = new Node();
-            Node n2 = new Node();
-            ushort boundPort = n1.AddListener(0);
-            n1.AddRecipient( boundPort, "localhost", 4005 );
-            n2.AddListener( 4005 );
+            return;
+            //ConnectedNode client = new ConnectedNode();
+            //ConnectedNode server = new ConnectedNode();
 
-            n1.GroupManager.CreateGroup( 55,
-                UpdatableType.Int,
-                UpdatableType.Double,
-                UpdatableType.Int );
+            //client.Connect( "localhost", 7005 );
+            //server.Host( 7005, 20, "my custom pw" );
 
+            ////n1.GroupManager.CreateGroup( 55,
+            ////    UpdatableType.Int,
+            ////    UpdatableType.Double,
+            ////    UpdatableType.Int );
 
-            while (true)
-            {
-                n1.Sync();
-                n2.Sync();
-                Thread.Sleep( 30 );
-            }
+            //while (true)
+            //{
+            //    client.Sync();
+            //    server.Sync();
+            //    Thread.Sleep( 30 );
+            //}
 
-            Console.WriteLine( "Stopping" );
-            n1.Dispose();
-            n2.Dispose();
+            //Console.WriteLine( "Stopping" );
+            //client.Dispose();
+            //server.Dispose();
         }
 
         [TestMethod()]

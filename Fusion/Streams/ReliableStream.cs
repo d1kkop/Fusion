@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Threading.Channels;
 
 namespace Fusion
 {
@@ -15,6 +14,9 @@ namespace Fusion
         DestroyGroup,
         DestroyAllGroups,
         Connect,
+        ConnectInvalidPw,
+        ConnectMaxUsers,
+        ConnectAccepted,
         Disconnect,
         Count
     }
@@ -77,9 +79,9 @@ namespace Fusion
 
             // Construct message
             SendMessage rm = new SendMessage();
-            rm.m_Id       = packetId;
-            rm.m_Payload  = payload;
-            rm.m_Sequence = m_ReliableDataMT.m_Newest++;
+            rm.m_Id        = packetId;
+            rm.m_Payload   = payload;
+            rm.m_Sequence  = m_ReliableDataMT.m_Newest++;
 
             // Add to list of messages thread safely
             lock (m_ReliableDataMT.m_Messages)
@@ -120,11 +122,19 @@ namespace Fusion
                 // Write each message with Length, ID & payload. The sequence is always the first +1 for each message.
                 foreach (var msg in m_ReliableDataMT.m_Messages)
                 {
-                    Debug.Assert( msg.m_Payload.Length <= MaxPayloadSize );
-                    binWriter.Write( (ushort)msg.m_Payload.Length );
-                    binWriter.Write( msg.m_Id );
-                    binWriter.Write( msg.m_Payload );
-                    // Avoid fragmentation and exceeding max recvBuffer size (65536).
+                    if (msg.m_Payload != null)
+                    {
+                        Debug.Assert( msg.m_Payload.Length <= MaxPayloadSize );
+                        binWriter.Write( (ushort)msg.m_Payload.Length );
+                        binWriter.Write( msg.m_Id );
+                        binWriter.Write( msg.m_Payload );
+                    }
+                    else
+                    {
+                        binWriter.Write( (ushort)0 );
+                        binWriter.Write( msg.m_Id );
+                    }
+                    // Avoid fragmentation and exceeding max recvBuffer size (default=65536).
                     if (binWriter.BaseStream.Position > MaxFrameSize)
                         break;
                     ++numMessagesAdded;
@@ -146,14 +156,15 @@ namespace Fusion
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
+                    long oldPosition  = reader.BaseStream.Position;
                     ushort messageLen = reader.ReadUInt16();
                     byte   id         = reader.ReadByte();
 
                     // Peek if message is system message. If so, handle system messages directly in the worker thread.
                     // However, do NOT spawn new worker thread as that could invalidate the reliability order.
-                    if (id < (byte)SystemPacketId.Count)
+                    if ( Channel == ReliableStream.SystemChannel )
                     {
-                        Debug.Assert( Channel == ReliableStream.SystemChannel );
+                        Debug.Assert( id < (byte)SystemPacketId.Count );
                         Recipient.ReceiveSystemMessageWT( reader, writer, id, Recipient.EndPoint, Channel );
                     }
                     else
@@ -162,7 +173,7 @@ namespace Fusion
                         RecvMessage rm = new RecvMessage();
                         rm.m_Channel   = Channel;
                         rm.m_Id        = id;
-                        rm.m_Payload   = reader.ReadBytes( messageLen );
+                        rm.m_Payload   = messageLen != 0 ? reader.ReadBytes( messageLen ) : null;
                         rm.m_Recipient = Recipient.EndPoint;
 
                         // Add it thread safely
@@ -172,6 +183,10 @@ namespace Fusion
                         }
                     }
 
+                    // Eventhough we should be exactly at the next package, if serialization goes wrong step to correct position
+                    // as otherwise we might risk sending false positive received packages and on the recipient. This will
+                    // then result in a sliding window error but do not know from which packet. So better to figure errors out here.
+                    reader.BaseStream.Position = oldPosition + 1 + 2 + messageLen;
                     sequence += 1;
                 }
                 m_ReliableDataRT.m_Expected = sequence;

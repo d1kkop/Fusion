@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -14,34 +13,31 @@ namespace Fusion
         Unreliable
     }
 
-    public sealed class Node : Messagable, IDisposable
+    public class Node : Messagable, IDisposable
     {
         Thread m_SendThread;
-        volatile bool m_IsClosing;
-        Dictionary<uint, Listener> m_Listeners;
-        Dictionary<IPEndPoint, Recipient> m_Recipients;
+        bool   m_IsDisposed;
+        volatile bool  m_IsClosing;
+        protected Dictionary<uint, Listener> m_Listeners;
+        protected Dictionary<IPEndPoint, Recipient> m_Recipients;
 
-        public GroupManager GroupManager { get; }
-        internal Recipient Server { get; private set; }
+        internal int NumRecipients => m_Recipients.Count;
         internal BinaryWriter BinWriter { get; private set; }
 
         public event Action<byte, byte [], IPEndPoint, byte> OnMessage;
-        public event Action<VariableGroup> OnGroupCreated;
-        public event Action<VariableGroup> OnGroupDestroyed;
+        public event Action<int> OnReceptionError;
 
         public Node()
         {
             m_Recipients = new Dictionary<IPEndPoint, Recipient>();
             m_Listeners  = new Dictionary<uint, Listener>();
-            GroupManager = new GroupManager( this );
             BinWriter    = new BinaryWriter( new MemoryStream() );
             m_SendThread = new Thread( SyncLoopST );
             m_SendThread.Start();
         }
 
-        public void Sync()
+        public virtual void Sync()
         {
-            GroupManager.Sync( BinWriter );
             lock (m_Recipients)
             {
                 foreach (var kvp in m_Recipients)
@@ -55,44 +51,47 @@ namespace Fusion
 
         public void Dispose()
         {
-            // TODO
+            Dispose( true );
             GC.SuppressFinalize( this );
-            m_IsClosing = true;
-            if (m_SendThread != null)
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (m_IsDisposed)
+                return;
+            m_IsDisposed = true;
+            if (disposing)
             {
+                m_IsClosing  = true;
                 m_SendThread.Join();
-                m_SendThread = null;
-            }
-            if (m_Listeners != null)
-            {
                 foreach (var kvp in m_Listeners)
                 {
                     kvp.Value.Dispose();
                 }
-                m_Listeners = null;
+                foreach (var kvp in m_Recipients)
+                {
+                    kvp.Value.Dispose();
+                }
+                BinWriter.Dispose();
             }
-            BinWriter.Dispose();
         }
 
         public ushort AddListener( ushort port, int simulatePacketLoss = 0 )
         {
             Listener listener;
-            lock (m_Listeners)
+            if (port != 0)
             {
-                if (port != 0)
+                if (!m_Listeners.TryGetValue( port, out listener ))
                 {
-                    if (!m_Listeners.TryGetValue( port, out listener ))
-                    {
-                        listener = new Listener( this, new UdpClient( port ) );
-                        m_Listeners.Add( port, listener );
-                    }
-                }
-                else
-                {
-                    listener = new Listener( this, new UdpClient( 0 ) );
-                    port     = (ushort)listener.LocalEndPoint.Port;
+                    listener = CreateListener( this, new UdpClient( port ) );
                     m_Listeners.Add( port, listener );
                 }
+            }
+            else
+            {
+                listener = CreateListener( this, new UdpClient( 0 ) );
+                port     = (ushort)listener.LocalEndPoint.Port;
+                m_Listeners.Add( port, listener );
             }
             listener.SimulatePacketLoss = simulatePacketLoss;
             return port;
@@ -100,26 +99,18 @@ namespace Fusion
 
         public void RemoveListener( ushort port )
         {
-            lock(m_Listeners)
-            {
-                m_Listeners.Remove( port );
-            }
+            m_Listeners.Remove( port );
         }
 
-        public void AddRecipient( string host, ushort port )
+        public Recipient AddRecipient( string host, ushort port )
         {
             ushort listenPort = AddListener(0);
-            AddRecipient( listenPort, host, port );
+            return AddRecipient( listenPort, host, port );
         }
 
-        public void AddRecipient( ushort listenerPort, string host, ushort port )
+        public Recipient AddRecipient( ushort listenerPort, string host, ushort port )
         {
-            Listener listener;
-            lock (m_Listeners)
-            {
-                // If does not exist, first add a listener.
-                listener = m_Listeners[listenerPort];
-            }
+            Listener listener = m_Listeners[listenerPort];
 
             // Apparently, localhost:port is not recognized as valid IPEndPoint.
             if (host=="localhost")
@@ -131,10 +122,11 @@ namespace Fusion
             {
                 if (!m_Recipients.TryGetValue( endpoint, out Recipient recipient ))
                 {
-                    recipient = new Recipient( this, endpoint, listener.UDPClient );
+                    recipient = CreateRecipient( this, endpoint, listener.UDPClient );
                     m_Recipients.Add( endpoint, recipient );
+                    return recipient;
                 }
-                else throw new Exception( "Recipient already exists" );
+                else throw new InvalidOperationException( "Recipient already exists" );
             }
         }
 
@@ -148,11 +140,15 @@ namespace Fusion
 
         public void Send( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
         {
-            if (id < (byte) SystemPacketId.Count)
+            if ( channel == ReliableStream.SystemChannel )
             {
-                throw new Exception( $"Id's 0 to {(byte)SystemPacketId.Count} are reserved." );
+                throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
+            SendPrivate( id, data, channel, sendMethod, target, except );
+        }
 
+        internal void SendPrivate( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null )
+        {
             lock (m_Recipients)
             {
                 if (target != null)
@@ -187,7 +183,7 @@ namespace Fusion
             {
                 if (!m_Recipients.TryGetValue( endpoint, out recipient ))
                 {
-                    recipient = new Recipient( this, endpoint, client );
+                    recipient = CreateRecipient( this, endpoint, client );
                     m_Recipients.Add( endpoint, recipient );
                 }
             }
@@ -219,7 +215,6 @@ namespace Fusion
                             recipient.FlushDataST( binWriter );
                         }
                     }
-                    GroupManager.Sync( binWriter );
                     Thread.Sleep( 30 );
                 }
             }
@@ -230,6 +225,16 @@ namespace Fusion
             return Thread.CurrentThread.ManagedThreadId == m_SendThread.ManagedThreadId;
         }
 
+        internal virtual Recipient CreateRecipient( Node node, IPEndPoint endpoint, UdpClient udpClient )
+        {
+            return new Recipient( node, endpoint, udpClient );
+        }
+
+        internal virtual Listener CreateListener( Node node, UdpClient udpClient )
+        {
+            return new Listener( node, udpClient );
+        }
+
         // ---- Events ---------------------------------------------------------------------------------------
 
         internal void RaiseOnMessage( byte id, byte[] data, IPEndPoint endpoint, byte channel )
@@ -237,14 +242,9 @@ namespace Fusion
             OnMessage?.Invoke( id, data, endpoint, channel );
         }
 
-        internal void RaiseOnGroupCreated( VariableGroup group )
+        internal void RaiseOnReceptionError(int error)
         {
-            OnGroupCreated?.Invoke( group );
-        }
-
-        internal void RaiseOnGroupDestroyed( VariableGroup group )
-        {
-            OnGroupDestroyed?.Invoke( group );
+            OnReceptionError?.Invoke( error );
         }
     }
 }

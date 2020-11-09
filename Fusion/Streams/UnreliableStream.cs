@@ -130,8 +130,8 @@ namespace Fusion
 
                     // Make reliable received message
                     RecvMessage rm = new RecvMessage();
-                    rm.m_Id      = reader.ReadByte();
-                    rm.m_Payload = reader.ReadBytes( messageLen );
+                    rm.m_Id        = reader.ReadByte();
+                    rm.m_Payload   = reader.ReadBytes( messageLen );
                     rm.m_Recipient = Recipient.EndPoint;
 
                     // Add it thread safely

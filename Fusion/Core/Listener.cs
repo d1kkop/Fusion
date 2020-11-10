@@ -72,6 +72,11 @@ namespace Fusion
                     }
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    // May occur if closing while receiving was in started.
+                    break;
+                }
 
                 // Check if we want to simulate packet loss.
                 bool skipPacket = SimulatePacketLoss > 0 && m_Random.Next( 0, SimulatePacketLoss )==0;

@@ -9,19 +9,20 @@ namespace Fusion
 {
     public class ConnectedNode : Node, IAsyncDisposable
     {
-
+        internal const int  m_ConnectAttemptIntervalMs  = 300;
         internal const int  m_ConnecTimeoutMs           = 20000;
         internal const int  m_KeepAliveMs               = 5000;
-        internal const int  m_LostTimeoutMs             = 10000;
+        internal const int  m_LostTimeoutMs             = 1;
         internal const int  m_MaintenanceIntvervalMs    = 2000;
+        internal const int  m_DisconnectLingerTimeMs    = 1000;
 
-        internal bool m_IsServer  = false;
-        internal bool m_IsClient  = false;
+        internal bool m_IsServer   = false;
+        internal bool m_IsClient   = false;
         internal bool m_IsDisposed = false;
 
         internal long m_LastCheckLostConnectionsMs = 0;
         internal Stopwatch  Stopwatch { get; private set; }
-        internal bool RemoveLostConnections { get; set; } = false;
+        internal bool RemoveLostConnections { get; set; } = true;
 
         public string Password { get; set; }
         public ushort MaxUsers { get; set; }
@@ -79,20 +80,7 @@ namespace Fusion
             m_IsDisposed = true;
             if (disposing)
             {
-                List<DeliveryTrace> disconnectDeliveries = new List<DeliveryTrace>();
-                lock (m_Recipients)
-                {
-                    foreach (var kvp in m_Recipients)
-                    {
-                        ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
-                        DeliveryTrace dt = recipient.SendDisconnect( BinWriter, ReliableStream.SystemChannel, true );
-                        if (dt != null)
-                        {
-                            disconnectDeliveries.Add( dt );
-                        }
-                    }
-                }
-                disconnectDeliveries.ForEach( dt => dt.WaitAll( 1000 ) );
+                Disconnect( m_DisconnectLingerTimeMs );
             }
             base.Dispose( disposing );
         }
@@ -103,6 +91,25 @@ namespace Fusion
             {
                 Dispose();
             });
+        }
+
+        internal void Disconnect(int timeout)
+        {
+            List<DeliveryTrace> disconnectDeliveries = new List<DeliveryTrace>();
+            lock (m_Recipients)
+            {
+                foreach (var kvp in m_Recipients)
+                {
+                    ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
+                    DeliveryTrace dt = recipient.SendDisconnect( BinWriter, ReliableStream.SystemChannel, true );
+                    if (dt != null)
+                    {
+                        disconnectDeliveries.Add( dt );
+                    }
+                }
+            }
+            // Wait until all disconnects have been delivered or timeout was reached.
+            disconnectDeliveries.ForEach( dt => dt.WaitAll( timeout ) );
         }
 
         public override void Sync()

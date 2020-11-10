@@ -116,7 +116,7 @@ namespace Fusion
             Debug.Assert( numMessagesAdded!=0 );
 
             // Eventhough this is already in a send thread, do the actual send async to avoid keeping the lock longer than necessary.
-            Recipient.UDPClient.SendAsync( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
+            Recipient.UDPClient.SendSafe( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
         internal void ReceiveDataWT( BinaryReader reader )

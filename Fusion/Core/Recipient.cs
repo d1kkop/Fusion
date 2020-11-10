@@ -38,12 +38,12 @@ namespace Fusion
                 return;
             if ( disposing )
             {
-                UDPClient.Dispose();
+                // Do NOT dispose udp client as this is owned by the listener. Recipients only borrow it.
             }
             m_Disposed = true;
         }
 
-        internal void Sync()
+        virtual internal void Sync()
         {
             lock(m_ReliableStreams)
             {
@@ -79,6 +79,10 @@ namespace Fusion
                 {
                     m_UnreliableStream.AddMessage( id, data );
                 }
+                break;
+
+                default:
+                Debug.Assert( false, "Invalid send method." );
                 break;
             }
 

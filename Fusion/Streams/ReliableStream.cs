@@ -242,7 +242,7 @@ namespace Fusion
             Debug.Assert( numMessagesAdded!=0 );
 
             // Eventhough this is already in a send thread, do the actual send async to avoid keeping the lock longer than necessary.
-            Recipient.UDPClient.SendAsync( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
+            Recipient.UDPClient.SendSafe( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
         internal void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
@@ -286,9 +286,13 @@ namespace Fusion
                     sequence += 1;
                 }
                 m_ReliableDataRT.m_Expected = sequence;
+                FlushAckWT( writer );
             }
-            // Always send ack. Ack may have been lost previously. Keep sending this until transmitter knows it was delivered.
-            FlushAckWT( writer );
+            else if ( !IsSequenceNewer( sequence, m_ReliableDataRT.m_Expected )) 
+            {
+                // Only retransmit ack here if incoming sequence is older. This helps prevent sending unsequenced acks back to the recipient.
+                FlushAckWT( writer );
+            }
         }
 
         void FlushAckWT( BinaryWriter binWriter )
@@ -297,7 +301,7 @@ namespace Fusion
             binWriter.Write( RACK );
             binWriter.Write( Channel );
             binWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
-            Recipient.UDPClient.SendAsync( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
+            Recipient.UDPClient.SendSafe( binWriter.GetData(),  (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
         internal void ReceiveAckWT( BinaryReader reader )
@@ -306,10 +310,13 @@ namespace Fusion
             if (IsSequenceNewer( ack, m_ReliableDataRT.m_AckExpected ))
             {
                 int numPacketsToDrop = (int)(ack - m_ReliableDataRT.m_AckExpected) + 1;
-                lock (m_ReliableDataMT.m_Messages)
+                lock ( m_ReliableDataMT.m_Messages )
                 {
-                    // If detect lost connection is set too low, we may receive outdated data when a connection was removed.
-                    // This makes this assert hit as we get acks for messages that were not sent.
+                    // This can get hit if packets arive after an endpoint was removed.
+                    // To avoid this, a sessionID must be provided. This is however done at the Connection level, not the lower level.
+                    // But the lower level, also does not remove 'outdated' endpoints, so it should not matter. 
+                    // Only when removing endpoints, one must start making distinquisment between new endpoints and old endpoints
+                    // where the endpoints between sessions may be identical.
                     Debug.Assert( m_ReliableDataMT.m_Messages.Count >= numPacketsToDrop );
                     while (numPacketsToDrop!=0)
                     {

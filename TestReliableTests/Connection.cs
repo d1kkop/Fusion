@@ -166,9 +166,8 @@ namespace TestReliable.Tests
             }
         }
 
-
         [TestMethod()]
-        public async Task ConnectWith1000ConnectionsComingAndGoing()
+        public async Task ConnectWithTonsOfConnectionsComingAndGoing()
         {
             int numTimeouts = 0;
             await using (var server = new ConnectedNode())
@@ -227,7 +226,6 @@ namespace TestReliable.Tests
                         };
                         client.OnReceptionError += ( int error ) => Assert.IsFalse( true );
 
-
                         if ( invalidPw)
                             client.Connect( "localhost", port, "THIS A WRONG PW!!" );
                         else
@@ -237,7 +235,7 @@ namespace TestReliable.Tests
                     }
 
                     // disconnect client from server
-                    if ( r.Next(5)==0)
+                    if ( r.Next(5)==0 )
                     {
                         if ( clients.Count != 0 )
                         {

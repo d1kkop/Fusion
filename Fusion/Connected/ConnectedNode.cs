@@ -12,7 +12,7 @@ namespace Fusion
         internal const int  m_ConnectAttemptIntervalMs  = 300;
         internal const int  m_ConnecTimeoutMs           = 20000;
         internal const int  m_KeepAliveMs               = 5000;
-        internal const int  m_LostTimeoutMs             = 1;
+        internal const int  m_LostTimeoutMs             = 12000;
         internal const int  m_MaintenanceIntvervalMs    = 2000;
         internal const int  m_DisconnectLingerTimeMs    = 1000;
 
@@ -22,7 +22,7 @@ namespace Fusion
 
         internal long m_LastCheckLostConnectionsMs = 0;
         internal Stopwatch  Stopwatch { get; private set; }
-        internal bool RemoveLostConnections { get; set; } = true;
+        internal bool RemoveLostConnections { get; set; } = false;
 
         public string Password { get; set; }
         public ushort MaxUsers { get; set; }
@@ -122,10 +122,11 @@ namespace Fusion
         {
             return new ConnectedRecipient( node as ConnectedNode, endpoint, udpClient );
         }
+
         internal override void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )
         {
-            if (RemoveLostConnections) CheckLostConnectionsWT();
             base.ReceiveDataWT( data, endpoint, client );
+            if (RemoveLostConnections) CheckLostConnectionsWT();
         }
 
         void CheckLostConnectionsWT()
@@ -137,12 +138,12 @@ namespace Fusion
             }
             m_LastCheckLostConnectionsMs = timeNowMs;
             List<ConnectedRecipient> deadRecipients = null;
-            lock(m_Recipients)
+            lock( m_Recipients )
             {
-                foreach ( var kvp in m_Recipients)
+                foreach ( var kvp in m_Recipients )
                 {
                     ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
-                    if ( timeNowMs - recipient.LastReceivedPacketMs > m_LostTimeoutMs)
+                    if ( timeNowMs - recipient.LastReceivedPacketMs > m_LostTimeoutMs )
                     {
                         if (deadRecipients == null) deadRecipients = new List<ConnectedRecipient>();
                         deadRecipients.Add( recipient );

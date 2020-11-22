@@ -7,7 +7,7 @@ using System.Net.Sockets;
 
 namespace Fusion
 {
-    public class Recipient : IDisposable
+     public class Recipient : IDisposable
     {
         bool m_Disposed;
         UnreliableStream m_UnreliableStream;
@@ -43,7 +43,7 @@ namespace Fusion
             m_Disposed = true;
         }
 
-        virtual internal void Sync()
+        internal void Sync()
         {
             lock(m_ReliableStreams)
             {
@@ -56,9 +56,15 @@ namespace Fusion
             m_UnreliableStream.Sync();
         }
 
-        internal void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        internal virtual void PrepareSend( BinaryWriter writer, StreamId streamId )
         {
-            switch ( sendMethod)
+            writer.BaseStream.Position = 0;
+            writer.Write( (byte)streamId );
+        }
+
+        internal virtual void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        {
+            switch ( sendMethod )
             {
                 case SendMethod.Reliable:
                 {
@@ -88,13 +94,13 @@ namespace Fusion
 
         }
 
-        internal void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
+        internal virtual void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
-            byte streamId = reader.ReadByte();
+            StreamId streamId = (StreamId)reader.ReadByte();
             switch (streamId)
             {
-                case ReliableStream.RID:
-                case ReliableStream.RACK:
+                case StreamId.RID:
+                case StreamId.RACK:
                 {
                     byte channel = reader.ReadByte();
                     ReliableStream stream;
@@ -106,16 +112,16 @@ namespace Fusion
                             m_ReliableStreams.Add( channel, stream );
                         }
                     }
-                    if (streamId == ReliableStream.RID)
+                    if (streamId == StreamId.RID)
                         stream.ReceiveDataWT( reader, writer );
                     else
                         stream.ReceiveAckWT( reader );
                 }
                 break;
 
-                case UnreliableStream.URID:
+                case StreamId.UID:
                 {
-                    m_UnreliableStream.ReceiveDataWT( reader );
+                    m_UnreliableStream.ReceiveDataWT( reader, writer );
                 }
                 break;
 
@@ -125,7 +131,7 @@ namespace Fusion
             }
         }
 
-        internal void FlushDataST( BinaryWriter writer )
+        internal virtual void FlushDataST( BinaryWriter writer )
         {
             lock(m_ReliableStreams)
             {
@@ -140,13 +146,8 @@ namespace Fusion
 
         virtual internal void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
         {
+            // Silently, ignore irrelevant packages
             Debug.Assert( id < (byte)SystemPacketId.Count );
-            SystemPacketId enumId = (SystemPacketId)id;
-            switch ( enumId )
-            {
-                default:
-                throw new InvalidOperationException( "Invalid reliable packet id." );
-            }
         }
     }
 }

@@ -13,6 +13,47 @@ namespace TestReliable.Tests
     public class Connection
     {
         [TestMethod()]
+        public void ConnectNormal()
+        {
+            using (ConnectedNode client = new ConnectedNode())
+            using (ConnectedNode server = new ConnectedNode())
+            {
+                bool waitOnResponse = true;
+                bool serverError = false;
+                bool clientError = false;
+
+                client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                {
+                    Assert.IsTrue( res == ConnectResult.Succes );
+                    waitOnResponse = false;
+                };
+                client.OnReceptionError += ( int error ) => clientError = true;
+
+                server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                {
+                    Assert.IsTrue( res == ConnectResult.Succes );
+                };
+                server.OnReceptionError += ( int error ) => serverError = true;
+
+                client.Connect( "localhost", 7001 );
+                server.Host( 7001, 1 );
+
+                int k  = 0;
+                while (k < 1000 && waitOnResponse && !(clientError || serverError))
+                {
+                    client.Sync();
+                    server.Sync();
+                    Thread.Sleep( 30 );
+                    k++;
+                }
+
+                Assert.IsFalse( waitOnResponse );
+                Assert.IsFalse( serverError );
+                Assert.IsFalse( clientError );
+            }
+        }
+
+        [TestMethod()]
         public void ConnectWithWrongPW()
         {
             using (ConnectedNode client = new ConnectedNode())
@@ -38,13 +79,16 @@ namespace TestReliable.Tests
                 client.Connect( "localhost", 7005, "wrong pw" );
                 server.Host( 7005, 1, "my custom pw" );
 
-                while (waitOnResponse && !(clientError || serverError))
+                int k  = 0;
+                while (k < 1000 && waitOnResponse && !(clientError || serverError))
                 {
                     client.Sync();
                     server.Sync();
                     Thread.Sleep( 30 );
+                    k++;
                 }
 
+                Assert.IsFalse( waitOnResponse );
                 Assert.IsFalse( serverError );
                 Assert.IsFalse( clientError );
             }

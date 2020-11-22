@@ -10,7 +10,31 @@ namespace Fusion
     internal enum SendMethod
     {
         Reliable,
-        Unreliable
+        Unreliable,
+        Connect
+    }
+
+    internal enum StreamId
+    {
+        CID,
+        RID,
+        RACK,
+        UID
+    }
+
+    internal enum SystemPacketId
+    {
+        IdPackRequest,
+        IdPackProvide,
+        CreateGroup,
+        DestroyGroup,
+        DestroyAllGroups,
+        Connect,
+        ConnectInvalidPw,
+        ConnectMaxUsers,
+        ConnectAccepted,
+        Disconnect,
+        Count
     }
 
     public class Node : Messagable, IDisposable

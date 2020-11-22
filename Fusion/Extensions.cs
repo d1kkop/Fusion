@@ -21,8 +21,10 @@ namespace Fusion
 
         public static byte [] GetData(this BinaryWriter writer)
         {
-            // Very hacky thing. But BinaryWriter is always made up of a memory stream in the application.
-            return ((MemoryStream)writer.BaseStream).GetBuffer();
+            // Copy the data, because the writer may be used for other purposes. Just providing a reference to the buffer might
+            // result in overwritten results! TODO 
+            byte [] bufferReference = ((MemoryStream)writer.BaseStream).GetBuffer();
+            return bufferReference.AsSpan( 0, (int)writer.BaseStream.Position ).ToArray();
         }
 
         public static void ResetPosition(this BinaryWriter writer)

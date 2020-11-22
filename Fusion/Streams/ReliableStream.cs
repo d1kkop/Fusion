@@ -8,21 +8,6 @@ using System.Threading;
 
 namespace Fusion
 {
-    internal enum SystemPacketId
-    {
-        IdPackRequest,
-        IdPackProvide,
-        CreateGroup,
-        DestroyGroup,
-        DestroyAllGroups,
-        Connect,
-        ConnectInvalidPw,
-        ConnectMaxUsers,
-        ConnectAccepted,
-        Disconnect,
-        Count
-    }
-
     public class DeliveryTrace
     {
         internal List<Recipient> m_Targets   = new List<Recipient>();
@@ -110,8 +95,6 @@ namespace Fusion
     public class ReliableStream
     {
         public const byte SystemChannel = 255;
-        public const byte RID    = 0;
-        public const byte RACK   = 1;
         const int MaxFrameSize   = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers.
         const int MaxPayloadSize = MaxFrameSize-10; // Reduce 10 from overhead of header.
 
@@ -208,8 +191,7 @@ namespace Fusion
                 if (m_ReliableDataMT.m_Messages.Count == 0)
                     return;
 
-                binWriter.BaseStream.Position = 0;
-                binWriter.Write( RID );
+                Recipient.PrepareSend( binWriter, StreamId.RID );
                 binWriter.Write( Channel );
 
                 // Only send sequence of first message, other sequences are consequative.
@@ -279,11 +261,11 @@ namespace Fusion
                         }
                     }
 
-                    // Eventhough we should be exactly at the next package, if serialization goes wrong step to correct position
-                    // as otherwise we might risk sending false positive received packages and on the recipient. This will
-                    // then result in a sliding window error but do not know from which packet. So better to figure errors out here.
-                    reader.BaseStream.Position = oldPosition + 1 + 2 + messageLen;
+                    // Move sequence up one, discarding old data.
                     sequence += 1;
+
+                    // Move reader position to next valid read position in case the readback function did not read all data.
+                    reader.BaseStream.Position = oldPosition + 1 + 2 + messageLen;
                 }
                 m_ReliableDataRT.m_Expected = sequence;
                 FlushAckWT( writer );
@@ -297,8 +279,7 @@ namespace Fusion
 
         void FlushAckWT( BinaryWriter binWriter )
         {
-            binWriter.BaseStream.Position = 0;
-            binWriter.Write( RACK );
+            Recipient.PrepareSend( binWriter, StreamId.RACK );
             binWriter.Write( Channel );
             binWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
             Recipient.UDPClient.SendSafe( binWriter.GetData(),  (int)binWriter.BaseStream.Position, Recipient.EndPoint );

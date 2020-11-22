@@ -8,38 +8,37 @@ namespace Fusion
 {
     public class UnreliableStream
     {
-        public const byte URID   = 2;
         const int MaxFrameSize   = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers.
         const int MaxPayloadSize = MaxFrameSize-10; // Reduce 10 from overhead of header.
 
-        struct SendMessage
+        protected struct SendMessage
         {
             internal uint m_Sequence;
             internal byte m_Id;
             internal byte [] m_Payload;
         }
 
-        struct RecvMessage
+        protected struct RecvMessage
         {
             internal byte m_Id;
             internal byte [] m_Payload;
             internal IPEndPoint m_Recipient;
         }
 
-        class DataMT // MainThread data
+        protected class DataMT // MainThread data
         {
             internal uint m_Newest;
             internal Queue<SendMessage> m_Messages = new Queue<SendMessage>();
         }
 
-        class DataRT // ReceiveThread data
+        protected class DataRT // ReceiveThread data
         {
             internal uint m_Expected;
             internal Queue<RecvMessage> m_Messages = new Queue<RecvMessage>();
         }
 
-        DataMT m_UnreliableDataMT;
-        DataRT m_UnreliableDataRT;
+        protected DataMT m_UnreliableDataMT;
+        protected DataRT m_UnreliableDataRT;
 
         internal Recipient Recipient { get; }
 
@@ -80,6 +79,11 @@ namespace Fusion
             }
         }
 
+        internal virtual StreamId GetStreamId()
+        {
+            return StreamId.UID;
+        }
+
         internal void FlushST( BinaryWriter binWriter )
         {
             // URID(1) | Sequence(4) | MsgLen(2) | Msg(variable)
@@ -90,8 +94,7 @@ namespace Fusion
                 if (m_UnreliableDataMT.m_Messages.Count == 0)
                     return;
 
-                binWriter.BaseStream.Position = 0;
-                binWriter.Write( URID );
+                Recipient.PrepareSend( binWriter, GetStreamId() );
 
                 // Only send sequence of first message, other sequences are consequative.
                 binWriter.Write( m_UnreliableDataMT.m_Messages.Peek().m_Sequence );
@@ -119,7 +122,7 @@ namespace Fusion
             Recipient.UDPClient.SendSafe( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
-        internal void ReceiveDataWT( BinaryReader reader )
+        internal virtual void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
             uint sequence = reader.ReadUInt32();
             if ( IsSequenceNewer(sequence, m_UnreliableDataRT.m_Expected) ) 
@@ -140,13 +143,14 @@ namespace Fusion
                         m_UnreliableDataRT.m_Messages.Enqueue( rm );
                     }
 
+                    // Move sequence up one, discarding old data
                     sequence += 1;
                 }
                 m_UnreliableDataRT.m_Expected = sequence;
             }
         }
 
-        static bool IsSequenceNewer( uint incoming, uint having )
+        public static bool IsSequenceNewer( uint incoming, uint having )
         {
             return (incoming - having) < (uint.MaxValue>>1);
         }

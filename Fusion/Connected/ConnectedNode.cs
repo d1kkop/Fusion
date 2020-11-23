@@ -21,8 +21,8 @@ namespace Fusion
         internal bool m_IsDisposed = false;
 
         internal long m_LastCheckLostConnectionsMs = 0;
-        internal Stopwatch  Stopwatch { get; private set; }
-        internal bool RemoveLostConnections { get; set; } = false;
+        internal Stopwatch Stopwatch { get; private set; }
+        internal bool RemoveLostConnections { get; set; } = true;
 
         public string Password { get; set; }
         public ushort MaxUsers { get; set; }
@@ -90,10 +90,10 @@ namespace Fusion
             await Task.Run( () =>
             {
                 Dispose();
-            });
+            } );
         }
 
-        internal void Disconnect(int timeout)
+        internal void Disconnect( int timeout )
         {
             List<DeliveryTrace> disconnectDeliveries = new List<DeliveryTrace>();
             lock (m_Recipients)
@@ -138,12 +138,12 @@ namespace Fusion
             }
             m_LastCheckLostConnectionsMs = timeNowMs;
             List<ConnectedRecipient> deadRecipients = null;
-            lock( m_Recipients )
+            lock (m_Recipients)
             {
-                foreach ( var kvp in m_Recipients )
+                foreach (var kvp in m_Recipients)
                 {
                     ConnectedRecipient recipient = kvp.Value as ConnectedRecipient;
-                    if ( timeNowMs - recipient.LastReceivedPacketMs > m_LostTimeoutMs )
+                    if (timeNowMs - recipient.LastReceivedPacketMs > m_LostTimeoutMs)
                     {
                         if (deadRecipients == null) deadRecipients = new List<ConnectedRecipient>();
                         deadRecipients.Add( recipient );
@@ -155,7 +155,7 @@ namespace Fusion
                     {
                         m_Recipients.Remove( recipient.EndPoint );
                         recipient.MarkAsLostConnectionWT();
-                    });
+                    } );
                 }
             }
         }

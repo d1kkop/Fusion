@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace Fusion
+﻿namespace Fusion
 {
     class VariableGroupStream
     {

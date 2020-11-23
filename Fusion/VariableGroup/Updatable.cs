@@ -76,5 +76,5 @@ namespace Fusion
     public class UpdatableInt : UpdatableFourBytes { }
     public class UpdatableFloat : UpdatableFourBytes { }
     public class UpdatableDouble : UpdatableEightBytes { }
-    
+
 }

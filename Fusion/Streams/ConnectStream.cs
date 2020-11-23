@@ -10,8 +10,8 @@ namespace Fusion
      */
     public class ConnectStream : UnreliableStream
     {
-        internal ConnectStream( Recipient recipient ):
-            base(recipient)
+        internal ConnectStream( Recipient recipient ) :
+            base( recipient )
         {
         }
 
@@ -23,12 +23,12 @@ namespace Fusion
         internal void ReceiveDataNewConnectionWT( BinaryReader reader, BinaryWriter writer )
         {
             byte streamId = reader.ReadByte();
-            if ( (StreamId) streamId != StreamId.CID)
+            if ((StreamId)streamId != StreamId.CID)
             {
                 return;
             }
             uint sequence = reader.ReadUInt32();
-            if ( IsSequenceNewer(sequence, m_UnreliableDataRT.m_Expected) ) 
+            if (IsSequenceNewer( sequence, m_UnreliableDataRT.m_Expected ))
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {

@@ -3,7 +3,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -146,13 +145,14 @@ namespace TestReliable.Tests
         {
             int numDisconnectsServer = 0;
             int numDisconnectsClient = 0;
+            int numConnectedOnClient = 0;
+            int numConnectedOnServer = 0;
+            int numTimeoutsOnClient = 0;
+            int numTimeoutsOnServer = 0;
             await using (var server = new ConnectedNode())
             {
                 ushort port = 7008;
-                int numClients   = 1024;
-                int numConnectedOnClient = 0;
-                int numConnectedOnServer = 0;
-
+                int numClients = 1024;
                 server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                 {
                     Assert.IsTrue( res == ConnectResult.Succes );
@@ -160,8 +160,10 @@ namespace TestReliable.Tests
                 };
                 server.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
                 {
-                    Assert.IsTrue( res == DisconnectReason.Requested );
-                    numDisconnectsServer++;
+                    Assert.IsTrue( res == DisconnectReason.Requested || res == DisconnectReason.Unreachable );
+                    if (res == DisconnectReason.Unreachable)
+                        numTimeoutsOnServer++;
+                    else numDisconnectsServer++;
                 };
                 server.OnReceptionError += ( int error ) => Assert.IsFalse( true );
                 server.Host( port, (ushort)numClients, "my custom pw 9918" );
@@ -177,8 +179,10 @@ namespace TestReliable.Tests
                     };
                     client.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
                     {
-                        Assert.IsTrue( res == DisconnectReason.Requested );
-                        numDisconnectsClient++;
+                        Assert.IsTrue( res == DisconnectReason.Requested || res == DisconnectReason.Unreachable );
+                        if (res == DisconnectReason.Unreachable)
+                            numTimeoutsOnClient++;
+                        else numDisconnectsClient++;
                     };
                     client.OnReceptionError += ( int error ) => Assert.IsFalse( true );
                     client.Connect( "localhost", port, "my custom pw 9918" );
@@ -193,19 +197,12 @@ namespace TestReliable.Tests
                 }
 
                 clients.ForEach( async c => await c.DisposeAsync() );
-
-                // Wait until server has received all client disconnects (this might not always work if not all messages could be send within a second).
-                int k = 0;
-                while (numDisconnectsServer != numClients && k++<1000) //~30sec max
-                {
-                    server.Sync();
-                    Thread.Sleep( 30 );
-                }
+                server.Sync();
 
                 Assert.IsTrue( numClients == numConnectedOnClient );
-                if (numClients != numDisconnectsServer)
+                if (numClients != (numDisconnectsServer+numTimeoutsOnServer))
                 {
-                    Assert.Inconclusive( $"Num disconnects ({numDisconnectsServer}) did not match expected ({numClients})." );
+                    Assert.Inconclusive( $"Num disconnects ({numDisconnectsServer}) + timeouts ({numTimeoutsOnServer}) did not match expected ({numClients})." );
                 }
             }
         }
@@ -245,7 +242,7 @@ namespace TestReliable.Tests
                     deadClients.Clear();
 
                     // Create new client
-                    if ( r.Next(3)==0 )
+                    if (r.Next( 3 )==0)
                     {
                         bool invalidPw = r.Next(3)==0;
                         ConnectedNode client = new ConnectedNode();
@@ -270,7 +267,7 @@ namespace TestReliable.Tests
                         };
                         client.OnReceptionError += ( int error ) => Assert.IsFalse( true );
 
-                        if ( invalidPw)
+                        if (invalidPw)
                             client.Connect( "localhost", port, "THIS A WRONG PW!!" );
                         else
                             client.Connect( "localhost", port, "NicePW" );
@@ -279,9 +276,9 @@ namespace TestReliable.Tests
                     }
 
                     // disconnect client from server
-                    if ( r.Next(5)==0 )
+                    if (r.Next( 5 )==0)
                     {
-                        if ( clients.Count != 0 )
+                        if (clients.Count != 0)
                         {
                             int t = r.Next(0, clients.Count);
                             await clients[t].DisposeAsync();
@@ -298,7 +295,7 @@ namespace TestReliable.Tests
                 clients.ForEach( async c => await c.DisposeAsync() );
             }
 
-            if ( numTimeouts != 0 )
+            if (numTimeouts != 0)
             {
                 Assert.Inconclusive( $"Num timetouts not 0, namely: {numTimeouts}" );
             }

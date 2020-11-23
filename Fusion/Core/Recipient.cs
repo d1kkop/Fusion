@@ -7,7 +7,7 @@ using System.Net.Sockets;
 
 namespace Fusion
 {
-     public class Recipient : IDisposable
+    public class Recipient : IDisposable
     {
         bool m_Disposed;
         UnreliableStream m_UnreliableStream;
@@ -32,11 +32,11 @@ namespace Fusion
             GC.SuppressFinalize( this );
         }
 
-        protected virtual void Dispose(bool disposing)
+        protected virtual void Dispose( bool disposing )
         {
             if (m_Disposed)
                 return;
-            if ( disposing )
+            if (disposing)
             {
                 // Do NOT dispose udp client as this is owned by the listener. Recipients only borrow it.
             }
@@ -45,9 +45,9 @@ namespace Fusion
 
         internal void Sync()
         {
-            lock(m_ReliableStreams)
+            lock (m_ReliableStreams)
             {
-                foreach( var kvp in m_ReliableStreams)
+                foreach (var kvp in m_ReliableStreams)
                 {
                     ReliableStream stream = kvp.Value;
                     stream.Sync();
@@ -64,7 +64,7 @@ namespace Fusion
 
         internal virtual void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
         {
-            switch ( sendMethod )
+            switch (sendMethod)
             {
                 case SendMethod.Reliable:
                 {
@@ -133,9 +133,9 @@ namespace Fusion
 
         internal virtual void FlushDataST( BinaryWriter writer )
         {
-            lock(m_ReliableStreams)
+            lock (m_ReliableStreams)
             {
-                foreach( var kvp in m_ReliableStreams)
+                foreach (var kvp in m_ReliableStreams)
                 {
                     ReliableStream stream = kvp.Value;
                     stream.FlushST( writer );

@@ -15,7 +15,7 @@ namespace Fusion
 
         public bool PeekSpecific( Recipient recipient )
         {
-            lock(this)
+            lock (this)
             {
                 return m_Delivered.Contains( recipient );
             }
@@ -25,7 +25,7 @@ namespace Fusion
         {
             bool result = m_Targets.Count == m_Delivered.Count;
 #if DEBUG
-            if ( result )
+            if (result)
             {
                 Debug.Assert( m_Targets.All( t => m_Delivered.Contains( t ) ) );
             }
@@ -68,7 +68,7 @@ namespace Fusion
             Debug.Assert( result );
         }
 
-        public bool WaitAll(int timeout)
+        public bool WaitAll( int timeout )
         {
             if (PeekAll())
                 return true;
@@ -154,9 +154,9 @@ namespace Fusion
             rm.m_Trace     = trace;
             rm.m_Sequence  = m_ReliableDataMT.m_Newest++;
 
-            if ( trace != null )
+            if (trace != null)
             {
-                lock(trace) // Need lock because on local machine, we may receive in a different thread on a recipient in this trace already.
+                lock (trace) // Need lock because on local machine, we may receive in a different thread on a recipient in this trace already.
                 {
                     trace.m_Targets.Add( Recipient );
                 }
@@ -270,7 +270,7 @@ namespace Fusion
                 m_ReliableDataRT.m_Expected = sequence;
                 FlushAckWT( writer );
             }
-            else if ( !IsSequenceNewer( sequence, m_ReliableDataRT.m_Expected )) 
+            else if (!IsSequenceNewer( sequence, m_ReliableDataRT.m_Expected ))
             {
                 // Only retransmit ack here if incoming sequence is older. This helps prevent sending unsequenced acks back to the recipient.
                 FlushAckWT( writer );
@@ -282,7 +282,7 @@ namespace Fusion
             Recipient.PrepareSend( binWriter, StreamId.RACK );
             binWriter.Write( Channel );
             binWriter.Write( m_ReliableDataRT.m_Expected-1 ); // Ack yields the new value to expect, so Ack-1 is the last one received.
-            Recipient.UDPClient.SendSafe( binWriter.GetData(),  (int)binWriter.BaseStream.Position, Recipient.EndPoint );
+            Recipient.UDPClient.SendSafe( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
         }
 
         internal void ReceiveAckWT( BinaryReader reader )
@@ -291,15 +291,11 @@ namespace Fusion
             if (IsSequenceNewer( ack, m_ReliableDataRT.m_AckExpected ))
             {
                 int numPacketsToDrop = (int)(ack - m_ReliableDataRT.m_AckExpected) + 1;
-                lock ( m_ReliableDataMT.m_Messages )
+                lock (m_ReliableDataMT.m_Messages)
                 {
-                    // This can get hit if packets arive after an endpoint was removed.
-                    // To avoid this, a sessionID must be provided. This is however done at the Connection level, not the lower level.
-                    // But the lower level, also does not remove 'outdated' endpoints, so it should not matter. 
-                    // Only when removing endpoints, one must start making distinquisment between new endpoints and old endpoints
-                    // where the endpoints between sessions may be identical.
                     Debug.Assert( m_ReliableDataMT.m_Messages.Count >= numPacketsToDrop );
-                    while (numPacketsToDrop!=0)
+                    while (numPacketsToDrop!=0 &&
+                           m_ReliableDataMT.m_Messages.Count!=0 /*<- In case data that is received after endpoint was removed does get through to this point, this fixes it.*/ )
                     {
                         SendMessage sm = m_ReliableDataMT.m_Messages.Dequeue();
                         if (sm.m_Trace != null)

@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
-using System.Xml.Serialization;
 
 namespace Fusion
 {
@@ -60,7 +58,7 @@ namespace Fusion
                 byte [] data;
                 IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, 0);
                 try
-                { 
+                {
                     data = UDPClient.Receive( ref endpoint );
 
                 } catch (SocketException e)
@@ -71,8 +69,7 @@ namespace Fusion
                         Node.AddMessage( new ReceptionError( Node, e.ErrorCode ) );
                     }
                     break;
-                }
-                catch (ObjectDisposedException)
+                } catch (ObjectDisposedException)
                 {
                     // May occur if closing while receiving was in started.
                     break;
@@ -95,7 +92,7 @@ namespace Fusion
             GC.SuppressFinalize( this );
         }
 
-        protected virtual void Dispose(bool disposing)
+        protected virtual void Dispose( bool disposing )
         {
             if (m_Disposed)
                 return;

@@ -13,7 +13,7 @@ namespace Fusion
     {
         VariableGroup m_Group;
 
-        public GroupCreated(VariableGroup group)
+        public GroupCreated( VariableGroup group )
         {
             Debug.Assert( group != null );
             m_Group = group;
@@ -76,21 +76,21 @@ namespace Fusion
             m_IdPacks.Clear();
         }
 
-        public void CreateGroup( uint type, params UpdatableType [] updatableTypes )
+        public void CreateGroup( uint type, params UpdatableType[] updatableTypes )
         {
             m_PendingGroups.Add( new VariableGroup( Node, null, type, 0, updatableTypes ) );
         }
 
         public void DestroyGroup( VariableGroup group )
         {
-            if ( group.Owner != null)
+            if (group.Owner != null)
             {
                 throw new InvalidOperationException( "Trying to destroy a remote created group is not allowed. This can lead to unordered result in p2p graph." );
             }
             bool groupWasDestroyed = false;
-            lock(m_Groups)
+            lock (m_Groups)
             {
-                if ( m_Groups.TryGetValue( group.Id, out VariableGroup resolvedGroup ) )
+                if (m_Groups.TryGetValue( group.Id, out VariableGroup resolvedGroup ))
                 {
                     Debug.Assert( group.IdIsAssigned );
                     SendGroupDestroyed( Node.BinWriter, null, false, ReliableStream.SystemChannel, group.Id );
@@ -227,7 +227,7 @@ namespace Fusion
             }
 #endif
             UpdatableType [] updatableTypes = new UpdatableType[num];
-            for ( int i = 0; i < num; i++ )
+            for (int i = 0;i < num;i++)
             {
                 UpdatableType updateType = (UpdatableType) reader.ReadByte();
                 updatableTypes[i] = updateType;
@@ -296,7 +296,7 @@ namespace Fusion
             lock (m_Groups)
             {
                 IEnumerable<KeyValuePair<uint, VariableGroup>> groupsToDestroy = m_Groups.Where( ( kvp ) => kvp.Value.Owner == endpoint );
-                foreach( var kvp in groupsToDestroy )
+                foreach (var kvp in groupsToDestroy)
                 {
                     VariableGroup vg = kvp.Value;
                     Debug.Assert( vg.IdIsAssigned );

@@ -15,7 +15,7 @@ namespace Fusion
         public IPEndPoint Owner { get; private set; }
         public uint Type { get; }
         public uint Id { get; private set; }
-        public UpdatableType [] UpdateTypes { get; private set; }
+        public UpdatableType[] UpdateTypes { get; private set; }
         internal ConnectedNode Node { get; private set; }
         internal bool IdIsAssigned => m_IdAssigned;
 

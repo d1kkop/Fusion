@@ -51,7 +51,7 @@ namespace Fusion
 
         internal void AddMessage( byte packetId, byte[] payload )
         {
-            if ( payload != null && payload.Length > MaxPayloadSize)
+            if (payload != null && payload.Length > MaxPayloadSize)
                 throw new ArgumentException( "Payload null or exceeding max size of " + MaxPayloadSize );
 
             // Construct message
@@ -69,7 +69,7 @@ namespace Fusion
 
         internal void Sync()
         {
-            lock(m_UnreliableDataRT.m_Messages)
+            lock (m_UnreliableDataRT.m_Messages)
             {
                 while (m_UnreliableDataRT.m_Messages.Count !=0)
                 {
@@ -100,7 +100,7 @@ namespace Fusion
                 binWriter.Write( m_UnreliableDataMT.m_Messages.Peek().m_Sequence );
 
                 // Write each message with Length, ID & payload. The sequence is always the first +1 for each message.
-                while ( m_UnreliableDataMT.m_Messages.Count != 0 )
+                while (m_UnreliableDataMT.m_Messages.Count != 0)
                 {
                     var msg = m_UnreliableDataMT.m_Messages.Dequeue();
                     Debug.Assert( msg.m_Payload.Length <= MaxPayloadSize );
@@ -125,7 +125,7 @@ namespace Fusion
         internal virtual void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
             uint sequence = reader.ReadUInt32();
-            if ( IsSequenceNewer(sequence, m_UnreliableDataRT.m_Expected) ) 
+            if (IsSequenceNewer( sequence, m_UnreliableDataRT.m_Expected ))
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {

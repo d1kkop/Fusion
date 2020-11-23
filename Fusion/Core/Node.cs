@@ -79,7 +79,7 @@ namespace Fusion
             GC.SuppressFinalize( this );
         }
 
-        protected virtual void Dispose(bool disposing)
+        protected virtual void Dispose( bool disposing )
         {
             if (m_IsDisposed)
                 return;
@@ -156,7 +156,7 @@ namespace Fusion
 
         public void RemoveRecipient( IPEndPoint endpoint )
         {
-            lock(m_Recipients)
+            lock (m_Recipients)
             {
                 m_Recipients.Remove( endpoint );
             }
@@ -178,7 +178,7 @@ namespace Fusion
 
         public DeliveryTrace SendReliableWithTrace( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
-            if ( channel == ReliableStream.SystemChannel )
+            if (channel == ReliableStream.SystemChannel)
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
@@ -282,7 +282,7 @@ namespace Fusion
             OnMessage?.Invoke( id, data, endpoint, channel );
         }
 
-        internal void RaiseOnReceptionError(int error)
+        internal void RaiseOnReceptionError( int error )
         {
             OnReceptionError?.Invoke( error );
         }

@@ -13,7 +13,7 @@ namespace Fusion
 
         internal void AddMessage( IMessage msg )
         {
-            lock( m_Messages )
+            lock (m_Messages)
             {
                 m_Messages.Enqueue( msg );
             }

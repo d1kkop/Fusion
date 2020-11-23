@@ -82,11 +82,11 @@ namespace Fusion
         public DisconnectReason DisconnectReason { get; private set; }
         public ConnectedNode ConnectedNode => Node as ConnectedNode;
 
-        internal ConnectedRecipient( ConnectedNode node, IPEndPoint endpoint, UdpClient udpClient ):
-            base( node, endpoint, udpClient)
+        internal ConnectedRecipient( ConnectedNode node, IPEndPoint endpoint, UdpClient udpClient ) :
+            base( node, endpoint, udpClient )
         {
             IsServer  = false;
-            LocalId   = (uint) (new Random()).Next();
+            LocalId   = (uint)(new Random()).Next();
             RemoteId  = uint.MaxValue;
             ConnectionState = ConnectionState.NotSet;
             m_ConnectStream = new ConnectStream( this );
@@ -102,7 +102,7 @@ namespace Fusion
 
         internal override void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
         {
-            switch( sendMethod)
+            switch (sendMethod)
             {
                 case SendMethod.Connect:
                 m_ConnectStream.AddMessage( id, data );
@@ -136,7 +136,7 @@ namespace Fusion
                     Debug.Assert( false );
                 }
             }
-            else if ( ConnectionState == ConnectionState.Initiating || ConnectionState == ConnectionState.NotSet )
+            else if (ConnectionState == ConnectionState.Initiating || ConnectionState == ConnectionState.NotSet)
             {
                 m_ConnectStream.ReceiveDataNewConnectionWT( reader, writer );
             }
@@ -203,7 +203,7 @@ namespace Fusion
                     return;
                 }
             }
-            
+
             // Packet not handled yet.
             base.ReceiveSystemMessageWT( reader, writer, id, endpoint, channel );
         }
@@ -226,14 +226,14 @@ namespace Fusion
             uint remoteId = reader.ReadUInt32();
 
             // If already active, send already connected.
-            if ( ConnectionState == ConnectionState.Active )
+            if (ConnectionState == ConnectionState.Active)
             {
                 SendConnectAccepted( writer, remoteId, channel );
                 return;
             }
 
             // Check max users.
-            if ( ConnectedNode.NumRecipients >= ConnectedNode.MaxUsers+1/*Add one because num is already incremented when coming here*/ )
+            if (ConnectedNode.NumRecipients >= ConnectedNode.MaxUsers+1/*Add one because num is already incremented when coming here*/ )
             {
                 SendConnectMaxUsers( writer, remoteId, channel );
                 return;
@@ -241,7 +241,7 @@ namespace Fusion
 
             // Check valid Pw.
             string pw = reader.ReadString();
-            if ( ConnectedNode.Password != pw ) // Note strings are immutable, so always thread safe.
+            if (ConnectedNode.Password != pw) // Note strings are immutable, so always thread safe.
             {
                 SendConnectInvalidPw( writer, remoteId, channel );
                 return;
@@ -249,7 +249,7 @@ namespace Fusion
 
             // In client/server the state on receive side is NotSet.
             // In p2p, the state might be either in NotSet or Initiating becuase both parties try to connect to eachother.
-            if ( ConnectionState == ConnectionState.NotSet || ConnectionState == ConnectionState.Initiating )
+            if (ConnectionState == ConnectionState.NotSet || ConnectionState == ConnectionState.Initiating)
             {
                 ConnectionState = ConnectionState.Active;
                 ConnectResult   = ConnectResult.Succes;
@@ -273,7 +273,7 @@ namespace Fusion
             // Sent localId is reflected. Check this.
             uint localId = reader.ReadUInt32();
             // In p2p, the connectState might have already changed to active as both parties try to connect to eachother.
-            if (ConnectionState == ConnectionState.Initiating && LocalId == localId )
+            if (ConnectionState == ConnectionState.Initiating && LocalId == localId)
             {
                 ConnectResult = ConnectResult.InvalidPw;
                 ConnectedNode.AddMessage( new ConnectMessage( ConnectedNode, this ) );
@@ -338,7 +338,7 @@ namespace Fusion
             // Need disconnect lock because DisconnectReason can be set from main thread or from receiving thread.
             lock (m_DisconnectLock)
             {
-                if ( ConnectionState != ConnectionState.Active )
+                if (ConnectionState != ConnectionState.Active)
                 {
                     return null;
                 }

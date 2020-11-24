@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Fusion
 {
-    public class ConnectedNode : Node, IAsyncDisposable
+    public partial class ConnectedNode : Node, IAsyncDisposable
     {
         Stopwatch m_Stopwatch;
         internal bool m_IsServer   = false;

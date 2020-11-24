@@ -12,18 +12,20 @@ namespace TestReliable.Tests
     public class Connection
     {
         [TestMethod()]
-        public void ConnectNormal()
+        public void ConnectTimeout()
         {
             using (ConnectedNode client = new ConnectedNode())
             using (ConnectedNode server = new ConnectedNode())
             {
+                ConnectStream.ConnecTimeoutMs = 5000;
+
                 bool waitOnResponse = true;
                 bool serverError = false;
                 bool clientError = false;
 
                 client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                 {
-                    Assert.IsTrue( res == ConnectResult.Succes );
+                    Assert.IsTrue( res == ConnectResult.Timedout );
                     waitOnResponse = false;
                 };
                 client.OnReceptionError += ( int error ) => clientError = true;
@@ -34,8 +36,8 @@ namespace TestReliable.Tests
                 };
                 server.OnReceptionError += ( int error ) => serverError = true;
 
-                client.Connect( "localhost", 7001 );
-                server.Host( 7001, 1 );
+                server.Host( 7000, 1, "", 1 ); // 100% packet loss
+                client.Connect( "localhost", 7000 );
 
                 int k  = 0;
                 while (k < 1000 && waitOnResponse && !(clientError || serverError))
@@ -53,11 +55,71 @@ namespace TestReliable.Tests
         }
 
         [TestMethod()]
-        public void ConnectWithWrongPW()
+        public void ConnectNormal()
         {
             using (ConnectedNode client = new ConnectedNode())
-            using (ConnectedNode server = new ConnectedNode())
             {
+                ConnectedNode server = new ConnectedNode();
+                bool waitOnResponse = true;
+                bool serverError = false;
+                bool clientError = false;
+                bool serverDisconnected = false;
+                bool serverHasSucces = false;
+
+                client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                {
+                    Assert.IsTrue( res == ConnectResult.Succes );
+                    waitOnResponse = false;
+                };
+                client.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                {
+                    Assert.IsTrue( res == DisconnectReason.Requested );
+                    serverDisconnected = true;
+                };
+                client.OnReceptionError += ( int error ) => clientError = true;
+
+                server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
+                {
+                    Assert.IsTrue( res == ConnectResult.Succes );
+                    serverHasSucces = true;
+                };
+                server.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                {
+                    Assert.IsTrue( res == DisconnectReason.Requested );
+                };
+                server.OnReceptionError += ( int error ) => serverError = true;
+
+                server.Host( 7001, 1, "GOOD PW" );
+                client.Connect( "localhost", 7001, "GOOD PW" );
+
+                int k  = 0;
+                while (k < 1000 && (waitOnResponse || !serverDisconnected || !serverHasSucces) && !(clientError || serverError))
+                {
+                    if (!waitOnResponse && serverHasSucces && server !=null)
+                    {
+                        server.Dispose();
+                        server=null;
+                    }
+                    client.Sync();
+                    if (server!=null) server.Sync();
+                    Thread.Sleep( 30 );
+                    k++;
+                }
+
+                Assert.IsFalse( waitOnResponse );
+                Assert.IsFalse( serverError );
+                Assert.IsFalse( clientError );
+                Assert.IsTrue( serverDisconnected );
+                Assert.IsTrue( serverHasSucces );
+            }
+        }
+
+        [TestMethod()]
+        async public Task ConnectWithWrongPW()
+        {
+            using (ConnectedNode client = new ConnectedNode())
+            {
+                ConnectedNode server = new ConnectedNode();
                 bool waitOnResponse = true;
                 bool serverError = false;
                 bool clientError = false;
@@ -67,11 +129,19 @@ namespace TestReliable.Tests
                     Assert.IsTrue( res == ConnectResult.InvalidPw );
                     waitOnResponse = false;
                 };
+                client.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                {
+                    Assert.IsTrue( res == DisconnectReason.Requested );
+                };
                 client.OnReceptionError += ( int error ) => clientError = true;
 
                 server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                 {
                     Assert.IsTrue( res == ConnectResult.Succes );
+                };
+                server.OnDisconnect += ( ConnectedRecipient rec, DisconnectReason res ) =>
+                {
+                    Assert.IsTrue( res == DisconnectReason.Requested );
                 };
                 server.OnReceptionError += ( int error ) => serverError = true;
 
@@ -86,6 +156,8 @@ namespace TestReliable.Tests
                     Thread.Sleep( 30 );
                     k++;
                 }
+
+                await server.DisposeAsync();
 
                 Assert.IsFalse( waitOnResponse );
                 Assert.IsFalse( serverError );
@@ -151,6 +223,8 @@ namespace TestReliable.Tests
             int numTimeoutsOnServer = 0;
             await using (var server = new ConnectedNode())
             {
+                server.KeepConnectionsAlive = false;
+
                 ushort port = 7008;
                 int numClients = 1024;
                 server.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
@@ -172,6 +246,7 @@ namespace TestReliable.Tests
                 for (int i = 0;i < numClients;i++)
                 {
                     ConnectedNode client = new ConnectedNode();
+                    client.KeepConnectionsAlive = false;
                     client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                     {
                         Assert.IsTrue( res == ConnectResult.Succes );
@@ -196,7 +271,8 @@ namespace TestReliable.Tests
                     Thread.Sleep( 30 );
                 }
 
-                clients.ForEach( async c => await c.DisposeAsync() );
+                //       clients.ForEach( async c => await c.DisposeAsync() );
+                clients.ForEach( c => c.Dispose() );
                 server.Sync();
 
                 Assert.IsTrue( numClients == numConnectedOnClient );
@@ -213,7 +289,10 @@ namespace TestReliable.Tests
             int numTimeouts = 0;
             await using (var server = new ConnectedNode())
             {
-                ushort port = 7008;
+                //server.ConnectingCanTimeout = false;
+                server.KeepConnectionsAlive = false;
+
+                ushort port = 7009;
                 int numClients   = 2048;
 
                 //Server
@@ -228,7 +307,8 @@ namespace TestReliable.Tests
                         if (res == DisconnectReason.Unreachable)
                             numTimeouts++;
                     };
-                    server.OnReceptionError += ( int error ) => Assert.IsFalse( true );
+                    server.OnReceptionError += ( int error ) =>
+                    Assert.IsFalse( true );
                     server.Host( port, (ushort)numClients, "NicePW" );
                 }
 
@@ -246,11 +326,13 @@ namespace TestReliable.Tests
                     {
                         bool invalidPw = r.Next(3)==0;
                         ConnectedNode client = new ConnectedNode();
+                        client.ConnectingCanTimeout = false;
+                        client.KeepConnectionsAlive = false;
                         if (!invalidPw)
                         {
                             client.OnConnect += ( ConnectedRecipient rec, ConnectResult res ) =>
                             {
-                                Assert.IsTrue( res == ConnectResult.Succes || res == ConnectResult.MaxUsers || res == ConnectResult.Timedout );
+                                Assert.IsTrue( res == ConnectResult.Succes || res == ConnectResult.MaxUsers );
                             };
                         }
                         else

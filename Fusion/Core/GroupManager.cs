@@ -139,7 +139,7 @@ namespace Fusion
 
         void AutoRequestNewIdPackIfRunningOut()
         {
-            if (Node.Server != null && Node.Server.ConnectionState == ConnectionState.Active)
+            if (Node.Server != null && Node.Server.ConnectStream.ConnectionState == ConnectionState.Active)
             {
                 if (m_Time.Elapsed.TotalSeconds - m_LastIdPackRequestTime > CheckIdPacksInterval
                      || m_LastIdPackRequestTime == 0 /*Initially*/ )

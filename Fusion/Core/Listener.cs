@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -63,9 +64,10 @@ namespace Fusion
 
                 } catch (SocketException e)
                 {
-                    if (e.SocketErrorCode != SocketError.Interrupted)
+                    if (e.SocketErrorCode != SocketError.Interrupted && e.SocketErrorCode != SocketError.ConnectionReset)
                     {
                         // Some error or force closed.
+                        Debug.WriteLine( e.Message );
                         Node.AddMessage( new ReceptionError( Node, e.ErrorCode ) );
                     }
                     break;

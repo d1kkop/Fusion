@@ -84,7 +84,7 @@ namespace Fusion
             return StreamId.UID;
         }
 
-        internal void FlushST( BinaryWriter binWriter )
+        internal virtual void FlushST( BinaryWriter binWriter )
         {
             // URID(1) | Sequence(4) | MsgLen(2) | Msg(variable)
 

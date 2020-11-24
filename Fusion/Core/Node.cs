@@ -34,6 +34,7 @@ namespace Fusion
         ConnectMaxUsers,
         ConnectAccepted,
         Disconnect,
+        KeepAlive,
         Count
     }
 

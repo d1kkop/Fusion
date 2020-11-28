@@ -35,6 +35,7 @@ namespace Fusion
         ConnectAccepted,
         Disconnect,
         KeepAlive,
+        RPC,
         Count
     }
 
@@ -57,7 +58,7 @@ namespace Fusion
             m_Recipients = new Dictionary<IPEndPoint, Recipient>();
             m_Listeners  = new Dictionary<uint, Listener>();
             BinWriter    = new BinaryWriter( new MemoryStream() );
-            m_SendThread = new Thread( SyncLoopST );
+            m_SendThread = new Thread( FlushST );
             m_SendThread.Start();
         }
 
@@ -242,7 +243,7 @@ namespace Fusion
             }
         }
 
-        void SyncLoopST()
+        void FlushST()
         {
             using (BinaryWriter binWriter = new BinaryWriter( new MemoryStream() ))
             {

@@ -76,7 +76,7 @@ namespace Fusion
 
         internal override void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
         {
-            Debug.Assert( channel == ReliableStream.SystemChannel );
+            Debug.Assert( channel == ReliableStream.SystemChannel || id == (byte)SystemPacketId.RPC );
             Debug.Assert( id < (byte)SystemPacketId.Count );
 
             SystemPacketId enumId = (SystemPacketId)id;
@@ -137,6 +137,10 @@ namespace Fusion
 
                     case SystemPacketId.KeepAlive:
                     ConnectStream.ReceiveKeepAliveWT( reader, channel );
+                    break;
+
+                    case SystemPacketId.RPC:
+                    ConnectedNode.ReceiveRPCWT( reader, channel, this );
                     break;
                 }
             }

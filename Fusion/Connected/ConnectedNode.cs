@@ -33,6 +33,7 @@ namespace Fusion
         {
             m_Stopwatch  = new Stopwatch();
             GroupManager = new GroupManager( this );
+            InitializeRPC();
             m_Stopwatch.Start();
         }
 
@@ -104,9 +105,6 @@ namespace Fusion
                 }
             }
             // Wait until all disconnects have been delivered or timeout was reached.
-#if DEBUG
-            timeout = 0;
-#endif
             disconnectDeliveries.ForEach( dt => dt.WaitAll( timeout ) );
         }
 

@@ -8,6 +8,7 @@ namespace TestReliable.Tests
     public class RPCTests
     {
         static bool receivedRpc;
+        static bool receivedRpcU;
 
         [RPC]
         public static void SendMessage(int a, byte b, char c, double d, string name, ConnectedRecipient recipient, byte channel )
@@ -21,6 +22,21 @@ namespace TestReliable.Tests
             if (recipient != null)
             {
                 receivedRpc = true;
+            }
+        }
+
+        [RPC]
+        public static void SendMessage2( int a, byte b, char c, double d, string name, ConnectedRecipient recipient, byte channel )
+        {
+            Assert.IsTrue( a==5 );
+            Assert.IsTrue( b==88 );
+            Assert.IsTrue( c=='Z' );
+            Assert.IsTrue( d==8812.7123712e53d );
+            Assert.IsTrue( name=="jahoo" );
+
+            if (recipient != null)
+            {
+                receivedRpcU = true;
             }
         }
 
@@ -41,7 +57,7 @@ namespace TestReliable.Tests
                 client.OnConnect += ( ConnectedRecipient recipient, ConnectResult result ) =>
                 {
                     client.DoReliableRPC( "SendMessage", 0, null, true, 1, (byte)2, (char)3, 5.123, "bartje" );
-
+                    client.DoUnreliableRPC( "SendMessage2", null, true, 5, (byte)88, 'Z', 8812.7123712e53d, "jahoo" );
                 };
 
                 server.OnDisconnect += ( ConnectedRecipient recipient, DisconnectReason reason ) =>
@@ -49,7 +65,7 @@ namespace TestReliable.Tests
                     serverAlive = false;
                 };
 
-                while (!receivedRpc && serverAlive)
+                while ((!receivedRpc || !receivedRpcU) && serverAlive)
                 {
                     client.Sync();
                     server.Sync();

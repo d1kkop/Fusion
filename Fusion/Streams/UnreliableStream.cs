@@ -130,17 +130,25 @@ namespace Fusion
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
                     ushort messageLen = reader.ReadUInt16();
+                    byte   messageId  = reader.ReadByte();
 
-                    // Make reliable received message
-                    RecvMessage rm = new RecvMessage();
-                    rm.m_Id        = reader.ReadByte();
-                    rm.m_Payload   = reader.ReadBytes( messageLen );
-                    rm.m_Recipient = Recipient.EndPoint;
-
-                    // Add it thread safely
-                    lock (m_UnreliableDataRT.m_Messages)
+                    if ((SystemPacketId)messageId < SystemPacketId.Count)
                     {
-                        m_UnreliableDataRT.m_Messages.Enqueue( rm );
+                        Recipient.ReceiveSystemMessageWT( reader, writer, messageId, Recipient.EndPoint, ReliableStream.SystemChannel );
+                    }
+                    else
+                    {
+                        // Make reliable received message
+                        RecvMessage rm = new RecvMessage();
+                        rm.m_Id        = messageId;
+                        rm.m_Payload   = reader.ReadBytes( messageLen );
+                        rm.m_Recipient = Recipient.EndPoint;
+
+                        // Add it thread safely
+                        lock (m_UnreliableDataRT.m_Messages)
+                        {
+                            m_UnreliableDataRT.m_Messages.Enqueue( rm );
+                        }
                     }
 
                     // Move sequence up one, discarding old data

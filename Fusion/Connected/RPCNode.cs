@@ -178,7 +178,7 @@ namespace Fusion
             var signatures = data.m_MethodInfo.GetParameters();
 
             if (arguments.Length != signatures.Length-2)
-                throw new InvalidOperationException( "Argument count does not atch number of arguments of method: " + methodName );
+                throw new InvalidOperationException( "Argument count does not match number of arguments of method: " + methodName );
 
             if (arguments.Length > byte.MaxValue)
                 throw new InvalidOperationException( "Max number of argumetns is " + byte.MaxValue );

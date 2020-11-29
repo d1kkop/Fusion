@@ -240,9 +240,8 @@ namespace Fusion
 
                     // Peek if message is system message. If so, handle system messages directly in the worker thread.
                     // However, do NOT spawn new worker thread as that could invalidate the reliability order.
-                    if (Channel == ReliableStream.SystemChannel || (SystemPacketId)id == SystemPacketId.RPC)
+                    if ((SystemPacketId)id < SystemPacketId.Count)
                     {
-                        Debug.Assert( id < (byte)SystemPacketId.Count );
                         Recipient.ReceiveSystemMessageWT( reader, writer, id, Recipient.EndPoint, Channel );
                     }
                     else

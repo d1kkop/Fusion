@@ -8,17 +8,18 @@ namespace Fusion
 {
     public class UnreliableStream
     {
-        const int MaxFrameSize   = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers.
-        const int MaxPayloadSize = MaxFrameSize-10; // Reduce 10 from overhead of header.
+        // NOTE: Actual max send size is a little above 1400 due to overhead in unreliable message.
+        const int MaxFrameSize = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers.
 
-        protected struct SendMessage
+        protected class SendMessage
         {
             internal uint m_Sequence;
             internal byte m_Id;
+            internal bool m_IsSystem;
             internal byte [] m_Payload;
         }
 
-        protected struct RecvMessage
+        protected class RecvMessage
         {
             internal byte m_Id;
             internal byte [] m_Payload;
@@ -49,15 +50,16 @@ namespace Fusion
             m_UnreliableDataRT = new DataRT();
         }
 
-        internal void AddMessage( byte packetId, byte[] payload )
+        internal void AddMessage( byte packetId, bool isSystem, byte [] payload )
         {
-            if (payload != null && payload.Length > MaxPayloadSize)
-                throw new ArgumentException( "Payload null or exceeding max size of " + MaxPayloadSize );
+            if (payload != null && payload.Length > MaxFrameSize)
+                throw new ArgumentException( $"Payload too big ( >{MaxFrameSize} ) for unreliable data. Fragmentation required. Use reliable." );
 
             // Construct message
             SendMessage rm = new SendMessage();
             rm.m_Id       = packetId;
-            rm.m_Payload  = payload;
+            rm.m_IsSystem = isSystem;
+            rm.m_Payload  = payload;        // It is ok to copy a reference. The data is pre-copied and shared between multiple streams.
             rm.m_Sequence = m_UnreliableDataMT.m_Newest++;
 
             // Add to list of messages thread safely
@@ -102,24 +104,40 @@ namespace Fusion
                 // Write each message with Length, ID & payload. The sequence is always the first +1 for each message.
                 while (m_UnreliableDataMT.m_Messages.Count != 0)
                 {
-                    var msg = m_UnreliableDataMT.m_Messages.Dequeue();
-                    Debug.Assert( msg.m_Payload.Length <= MaxPayloadSize );
-                    binWriter.Write( (ushort)msg.m_Payload.Length );
-                    binWriter.Write( msg.m_Id );
-                    binWriter.Write( msg.m_Payload );
+                    byte [] payload = m_UnreliableDataMT.m_Messages.Peek().m_Payload;
+
                     // Avoid fragmentation and exceeding max recvBuffer size (65536).
-                    if (binWriter.BaseStream.Position > MaxFrameSize)
+                    if (binWriter.BaseStream.Position + (payload!=null ? payload.Length : 0) > MaxFrameSize )
+                    {
                         break;
+                    }
+
+                    var msg = m_UnreliableDataMT.m_Messages.Dequeue();
+                    Debug.Assert( msg.m_Payload.Length <= MaxFrameSize );
+                    binWriter.Write( msg.m_Id );
+                    binWriter.Write( msg.m_IsSystem );
+                    if (msg.m_Payload != null)
+                    {
+                        binWriter.Write( (ushort)msg.m_Payload.Length );
+                        binWriter.Write( msg.m_Payload );
+                    }
+                    else
+                    {
+                        binWriter.Write( (ushort)0 );
+                    }
+
                     ++numMessagesAdded;
                 }
             }
 
             // If Payload is too big, we cannot send it. We ensure however at the point where a message is inserted,
             // that no such payload can be added. Assert this.
-            Debug.Assert( numMessagesAdded!=0 );
+            Debug.Assert( numMessagesAdded > 0 );
+
+            Debug.Assert( binWriter.BaseStream.Position < MaxFrameSize + 50 );
 
             // Eventhough this is already in a send thread, do the actual send async to avoid keeping the lock longer than necessary.
-            Recipient.UDPClient.SendSafe( binWriter.GetData(), (int)binWriter.BaseStream.Position, Recipient.EndPoint );
+            Recipient.UDPClient.SendSafe( binWriter.GetData(), Recipient.EndPoint );
         }
 
         internal virtual void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
@@ -129,11 +147,14 @@ namespace Fusion
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
-                    ushort messageLen = reader.ReadUInt16();
                     byte   messageId  = reader.ReadByte();
+                    bool   isSystem   = reader.ReadBoolean();
+                    ushort messageLen = reader.ReadUInt16();
+                    long preMessagePosition = reader.BaseStream.Position;
 
-                    if ((SystemPacketId)messageId < SystemPacketId.Count)
+                    if ( isSystem )
                     {
+                        Debug.Assert( (SystemPacketId)messageId < SystemPacketId.Count );
                         Recipient.ReceiveSystemMessageWT( reader, writer, messageId, Recipient.EndPoint, ReliableStream.SystemChannel );
                     }
                     else
@@ -141,7 +162,7 @@ namespace Fusion
                         // Make reliable received message
                         RecvMessage rm = new RecvMessage();
                         rm.m_Id        = messageId;
-                        rm.m_Payload   = reader.ReadBytes( messageLen );
+                        rm.m_Payload   = messageLen != 0 ? reader.ReadBytes( messageLen ) : null;
                         rm.m_Recipient = Recipient.EndPoint;
 
                         // Add it thread safely
@@ -153,6 +174,9 @@ namespace Fusion
 
                     // Move sequence up one, discarding old data
                     sequence += 1;
+
+                    // Regardless of what has been read, move to next message (if any).
+                    reader.BaseStream.Position = preMessagePosition + messageLen;
                 }
                 m_UnreliableDataRT.m_Expected = sequence;
             }

@@ -38,18 +38,18 @@ namespace Fusion
             internal MethodInfo m_MethodInfo;
         }
 
-        Dictionary<string, RPCData> m_RPC;
-        Dictionary<Type, Action<BinaryWriter, object>> m_TypeSerializers;
-        Dictionary<Type, Func<BinaryReader, object>> m_TypeDeserializers;
+        static Dictionary<string, RPCData> m_RPC;
+        static Dictionary<Type, Action<BinaryWriter, object>> m_TypeSerializers;
+        static Dictionary<Type, Func<BinaryReader, object>> m_TypeDeserializers;
 
-        void InitializeRPC()
+        static void InitializeRPCStatic()
         {
             InitializeMapping();
             InitializeSerializers();
             InitializeDeserializers();
         }
 
-        void InitializeMapping()
+        static void InitializeMapping()
         {
             m_RPC = new Dictionary<string, RPCData>();
 
@@ -72,7 +72,7 @@ namespace Fusion
             }
         }
 
-        void InitializeSerializers()
+        static void InitializeSerializers()
         {
             m_TypeSerializers = new Dictionary<Type, Action<BinaryWriter, object>>();
             m_TypeSerializers.Add( typeof( byte ), ( bw, o ) => bw.Write( (byte)o ) );
@@ -117,7 +117,7 @@ namespace Fusion
             m_TypeSerializers.Add( typeof( Dictionary<string, string> ), serializeDicStrStr );
         }
 
-        void InitializeDeserializers()
+        static void InitializeDeserializers()
         {
             m_TypeDeserializers = new Dictionary<Type, Func<BinaryReader, object>>();
             m_TypeDeserializers.Add( typeof( byte ), ( bw ) => bw.ReadByte() );

@@ -95,7 +95,7 @@ namespace TestReliable.Tests
                 n2.AddRecipient( dstPort, "localhost", boundPort );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                int numMsgsSent = 10000;
+                int numMsgsSent = 20000;
                 for (int i = 0;i < numMsgsSent;i++)
                     n2.SendUnreliable( 20, data );
 
@@ -106,14 +106,30 @@ namespace TestReliable.Tests
                     numMessagesReceived++;
                 };
 
+                int notProgressingTime = 0;
+                int prevNumMessagesReceived = 0;
                 while (numMessagesReceived!=numMsgsSent)
                 {
                     n1.Sync();
+                    if (numMessagesReceived != prevNumMessagesReceived)
+                    {
+                        prevNumMessagesReceived = numMessagesReceived;
+                        notProgressingTime = 0;
+                    }
+                    else
+                    {
+                        if (notProgressingTime > 1000)
+                            break;
+                        notProgressingTime += 30;
+                    }
                     //   n2.Sync();
                     Thread.Sleep( 30 );
                 }
 
-                Console.WriteLine( "Stopping" );
+                if ( numMessagesReceived != numMsgsSent )
+                {
+                    Assert.Inconclusive( $"Num messages received {numMessagesReceived}, while sent {numMsgsSent}" );
+                }
             }
         }
     }

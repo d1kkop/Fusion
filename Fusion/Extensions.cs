@@ -19,12 +19,10 @@ namespace Fusion
             return v;
         }
 
-        public static byte[] GetData( this BinaryWriter writer )
+        public static ArraySegment<byte> GetData( this BinaryWriter writer )
         {
-            // Copy the data, because the writer may be used for other purposes. Just providing a reference to the buffer might
-            // result in overwritten results! TODO 
-            byte [] bufferReference = ((MemoryStream)writer.BaseStream).GetBuffer();
-            return bufferReference.AsSpan( 0, (int)writer.BaseStream.Position ).ToArray();
+            return new ArraySegment<byte>(
+                ((MemoryStream)writer.BaseStream).GetBuffer(), 0, (int) writer.BaseStream.Position);
         }
 
         public static void ResetPosition( this BinaryWriter writer )
@@ -32,11 +30,11 @@ namespace Fusion
             writer.BaseStream.Position = 0;
         }
 
-        public static void SendSafe( this UdpClient client, byte[] data, int len, IPEndPoint target )
+        public static void SendSafe( this UdpClient client, ArraySegment<byte> data, IPEndPoint target )
         {
             try
             {
-                client.SendAsync( data, len, target );
+                client.SendAsync( data.Array, data.Count, target );
             } catch (System.ObjectDisposedException/*Disposed*/) { } catch (SocketException/*Close or shutdown*/) { }
         }
     }

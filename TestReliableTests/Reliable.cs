@@ -132,7 +132,7 @@ namespace TestReliable.Tests
                 n1.AddRecipient( boundPort, "localhost", dstPort );
                 n2.AddListener( dstPort, packetLoss );
                 n2.AddRecipient( dstPort, "localhost", boundPort );
-                int numMsgsSent = 100;
+                int numMsgsSent = 10000;
                 Random rand = new Random();
 
                 Dictionary<byte, ChannelData> channelDataN1 = new Dictionary<byte, ChannelData>();

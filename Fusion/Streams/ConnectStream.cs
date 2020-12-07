@@ -183,9 +183,11 @@ namespace Fusion
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
-                    ushort messageLen = reader.ReadUInt16();
                     byte dataId       = reader.ReadByte();
+                    bool isSystem     = reader.ReadBoolean();
+                    ushort messageLen = reader.ReadUInt16();
                     long oldPosition  = reader.BaseStream.Position;
+                    Debug.Assert( isSystem );
                     Recipient.ReceiveSystemMessageWT( reader, writer, dataId, Recipient.EndPoint, ReliableStream.SystemChannel );
                     sequence += 1;
                     // Move to next read position. This is better as the receive function may not have read all data incase of irrelevant.

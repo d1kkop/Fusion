@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -26,12 +27,12 @@ namespace Fusion
             writer.Write( (byte)streamId );
         }
 
-        internal override void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        internal override void Send( byte id, byte [] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
         {
             switch (sendMethod)
             {
                 case SendMethod.Connect:
-                ConnectStream.AddMessage( id, data );
+                ConnectStream.AddMessage( id, true, data );
                 break;
 
                 default:

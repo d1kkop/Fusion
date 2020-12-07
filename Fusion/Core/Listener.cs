@@ -38,6 +38,7 @@ namespace Fusion
         volatile bool m_IsClosing;
         Thread m_ListenThread;
         Random m_Random = new Random();
+        UInt64 m_NumPacketsReceived = 0;
 
         internal Listener( Node node, UdpClient listener )
         {
@@ -73,9 +74,11 @@ namespace Fusion
                     break;
                 } catch (ObjectDisposedException)
                 {
-                    // May occur if closing while receiving was in started.
+                    // May occur if closing while receiving was started.
                     break;
                 }
+
+                m_NumPacketsReceived++;
 
                 // Check if we want to simulate packet loss.
                 bool skipPacket = SimulatePacketLoss > 0 && m_Random.Next( 0, SimulatePacketLoss )==0;

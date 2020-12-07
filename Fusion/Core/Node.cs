@@ -164,12 +164,12 @@ namespace Fusion
             }
         }
 
-        public void SendUnreliable( byte id, byte[] data, IPEndPoint target = null, IPEndPoint except = null )
+        public void SendUnreliable( byte id, ArraySegment<byte> data, IPEndPoint target = null, IPEndPoint except = null )
         {
             SendPrivate( id, data, 0, SendMethod.Unreliable, target, except, false );
         }
 
-        public void SendReliable( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
+        public void SendReliable( byte id, ArraySegment<byte> data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
             if (channel == ReliableStream.SystemChannel)
             {
@@ -178,7 +178,7 @@ namespace Fusion
             SendPrivate( id, data, channel, SendMethod.Reliable, target, except, false );
         }
 
-        public DeliveryTrace SendReliableWithTrace( byte id, byte[] data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
+        public DeliveryTrace SendReliableWithTrace( byte id, ArraySegment<byte> data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
             if (channel == ReliableStream.SystemChannel)
             {
@@ -187,17 +187,22 @@ namespace Fusion
             return SendPrivate( id, data, channel, SendMethod.Reliable, target, except, true );
         }
 
-        internal DeliveryTrace SendPrivate( byte id, byte[] data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null, bool traceDelivery = false )
+        internal DeliveryTrace SendPrivate( byte id, ArraySegment<byte> data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null, bool traceDelivery = false )
         {
             DeliveryTrace dt = traceDelivery ? new DeliveryTrace() : null;
             lock (m_Recipients)
             {
+                // NOTE: The original data must be copied because the caller may change it after the call.
+                // We also may deal with multiple recipients. So they can all share the same duplicated data.
+                byte [] sharedCopy = new byte [data.Count];
+                if ( data.Array != null )
+                    data.CopyTo( sharedCopy, 0 );
                 if (target != null)
                 {
                     Recipient recipient;
                     if (m_Recipients.TryGetValue( target, out recipient ))
                     {
-                        recipient.Send( id, data, channel, sendMethod, dt );
+                        recipient.Send( id, sharedCopy, channel, sendMethod, dt );
                     }
                 }
                 else
@@ -207,7 +212,7 @@ namespace Fusion
                         Recipient recipient = kvp.Value;
                         if (recipient.EndPoint == except)
                             continue;
-                        recipient.Send( id, data, channel, sendMethod, dt );
+                        recipient.Send( id, sharedCopy, channel, sendMethod, dt );
                     }
                 }
             }

@@ -62,7 +62,7 @@ namespace Fusion
             writer.Write( (byte)streamId );
         }
 
-        internal virtual void Send( byte id, byte[] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        internal virtual void Send( byte id, byte [] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
         {
             switch (sendMethod)
             {
@@ -83,7 +83,7 @@ namespace Fusion
 
                 case SendMethod.Unreliable:
                 {
-                    m_UnreliableStream.AddMessage( id, data );
+                    m_UnreliableStream.AddMessage( id, false, data );
                 }
                 break;
 

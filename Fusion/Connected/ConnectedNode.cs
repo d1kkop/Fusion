@@ -33,8 +33,12 @@ namespace Fusion
         {
             m_Stopwatch  = new Stopwatch();
             GroupManager = new GroupManager( this );
-            InitializeRPC();
             m_Stopwatch.Start();
+        }
+
+        static ConnectedNode()
+        {
+            InitializeRPCStatic();
         }
 
         public void Connect( string host, ushort port, string pw = "" )

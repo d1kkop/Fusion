@@ -189,20 +189,18 @@ namespace Fusion
 
         internal DeliveryTrace SendPrivate( byte id, ArraySegment<byte> data, byte channel = 0, SendMethod sendMethod = SendMethod.Reliable, IPEndPoint target = null, IPEndPoint except = null, bool traceDelivery = false )
         {
+            // NOTE: The original data must be copied because the caller may change it after the call.
+            // We also may deal with multiple recipients. So they can all share the same duplicated data.
+            byte [] dataCpy = data.GetCopy();
             DeliveryTrace dt = traceDelivery ? new DeliveryTrace() : null;
             lock (m_Recipients)
             {
-                // NOTE: The original data must be copied because the caller may change it after the call.
-                // We also may deal with multiple recipients. So they can all share the same duplicated data.
-                byte [] sharedCopy = new byte [data.Count];
-                if ( data.Array != null )
-                    data.CopyTo( sharedCopy, 0 );
                 if (target != null)
                 {
                     Recipient recipient;
                     if (m_Recipients.TryGetValue( target, out recipient ))
                     {
-                        recipient.Send( id, sharedCopy, channel, sendMethod, dt );
+                        recipient.Send( id, dataCpy, channel, false, sendMethod, dt );
                     }
                 }
                 else
@@ -212,11 +210,39 @@ namespace Fusion
                         Recipient recipient = kvp.Value;
                         if (recipient.EndPoint == except)
                             continue;
-                        recipient.Send( id, sharedCopy, channel, sendMethod, dt );
+                        recipient.Send( id, dataCpy, channel, false, sendMethod, dt );
                     }
                 }
             }
             return dt;
+        }
+
+        internal void SendUnreliablePrivate( byte id, bool isSystem, ArraySegment<byte> data, IPEndPoint target = null, IPEndPoint except = null )
+        {
+            // NOTE: The original data must be copied because the caller may change it after the call.
+            // We also may deal with multiple recipients. So they can all share the same duplicated data.
+            byte [] dataCpy = data.GetCopy();
+            lock (m_Recipients)
+            {
+                if (target != null)
+                {
+                    Recipient recipient;
+                    if (m_Recipients.TryGetValue( target, out recipient ))
+                    {
+                        recipient.Send( id, dataCpy, 0, false, SendMethod.Unreliable, null );
+                    }
+                }
+                else
+                {
+                    foreach (var kvp in m_Recipients)
+                    {
+                        Recipient recipient = kvp.Value;
+                        if (recipient.EndPoint == except)
+                            continue;
+                        recipient.Send( id, dataCpy, 0, false, SendMethod.Unreliable, null );
+                    }
+                }
+            }
         }
 
         internal virtual void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )

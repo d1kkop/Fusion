@@ -208,7 +208,7 @@ namespace Fusion
                 break;
 
                 case SendMethod.Unreliable:
-                SendUnreliable( (byte)SystemPacketId.RPC, BinWriter.GetData(), onlyThisRecipient, null );
+                SendUnreliablePrivate( (byte)SystemPacketId.RPC, true, BinWriter.GetData(), onlyThisRecipient, null );
                 break;
 
                 default:
@@ -217,7 +217,7 @@ namespace Fusion
             }
         }
 
-        internal void ReceiveRPCWT( BinaryReader reader, byte channel, ConnectedRecipient recipient )
+        internal void ReceiveRPCWT( bool isReliableMsg, BinaryReader reader, byte channel, ConnectedRecipient recipient )
         {
             byte methodId    = reader.ReadByte();
             byte numAguments = reader.ReadByte();
@@ -236,8 +236,17 @@ namespace Fusion
             rpcArguments[numAguments]   = recipient;
             rpcArguments[numAguments+1] = channel;
 
-            // This message received in receive thread, so add message on calling (user) thread.
-            AddMessage( new RPCMessage( data.m_MethodInfo, rpcArguments ) );
+            // In case the RPC is received in reliable fashion, we must insert it into the other reliable ordered messages.
+            // Else, if sent unreliable, just add it as a generic RPC Message.
+            var rpcMessage = new RPCMessage( data.m_MethodInfo, rpcArguments );
+            if (isReliableMsg)
+            {
+                recipient.ReliableStreams[channel].AddRecvMessageWT( rpcMessage );
+            }
+            else
+            {
+                AddMessage( new RPCMessage( data.m_MethodInfo, rpcArguments ) );
+            }
         }
     }
 }

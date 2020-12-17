@@ -10,20 +10,20 @@ namespace Fusion
     public class Recipient : IDisposable
     {
         bool m_Disposed;
-        UnreliableStream m_UnreliableStream;
-        Dictionary<byte, ReliableStream> m_ReliableStreams;
 
         internal Node Node { get; }
         internal IPEndPoint EndPoint { get; }
         internal UdpClient UDPClient { get; }
+        internal UnreliableStream UnreliableStream { get; }
+        internal Dictionary<byte, ReliableStream> ReliableStreams { get; }
 
         internal Recipient( Node node, IPEndPoint endpoint, UdpClient recipient )
         {
             Node      = node;
             EndPoint  = endpoint;
             UDPClient = recipient;
-            m_UnreliableStream = new UnreliableStream( this );
-            m_ReliableStreams  = new Dictionary<byte, ReliableStream>();
+            UnreliableStream = new UnreliableStream( this );
+            ReliableStreams  = new Dictionary<byte, ReliableStream>();
         }
 
         public void Dispose()
@@ -45,15 +45,15 @@ namespace Fusion
 
         internal void Sync()
         {
-            lock (m_ReliableStreams)
+            lock (ReliableStreams)
             {
-                foreach (var kvp in m_ReliableStreams)
+                foreach (var kvp in ReliableStreams)
                 {
                     ReliableStream stream = kvp.Value;
                     stream.Sync();
                 }
             }
-            m_UnreliableStream.Sync();
+            UnreliableStream.Sync();
         }
 
         internal virtual void PrepareSend( BinaryWriter writer, StreamId streamId )
@@ -62,19 +62,19 @@ namespace Fusion
             writer.Write( (byte)streamId );
         }
 
-        internal virtual void Send( byte id, byte [] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        internal virtual void Send( byte id, byte [] data, byte channel, bool isSystem, SendMethod sendMethod, DeliveryTrace trace )
         {
             switch (sendMethod)
             {
                 case SendMethod.Reliable:
                 {
                     ReliableStream stream;
-                    lock (m_ReliableStreams)
+                    lock (ReliableStreams)
                     {
-                        if (!m_ReliableStreams.TryGetValue( channel, out stream ))
+                        if (!ReliableStreams.TryGetValue( channel, out stream ))
                         {
                             stream = new ReliableStream( this, channel );
-                            m_ReliableStreams.Add( channel, stream );
+                            ReliableStreams.Add( channel, stream );
                         }
                     }
                     stream.AddMessage( id, data, trace );
@@ -83,7 +83,7 @@ namespace Fusion
 
                 case SendMethod.Unreliable:
                 {
-                    m_UnreliableStream.AddMessage( id, false, data );
+                    UnreliableStream.AddMessage( id, isSystem, data );
                 }
                 break;
 
@@ -104,12 +104,12 @@ namespace Fusion
                 {
                     byte channel = reader.ReadByte();
                     ReliableStream stream;
-                    lock (m_ReliableStreams)
+                    lock (ReliableStreams)
                     {
-                        if (!m_ReliableStreams.TryGetValue( channel, out stream ))
+                        if (!ReliableStreams.TryGetValue( channel, out stream ))
                         {
                             stream = new ReliableStream( this, channel );
-                            m_ReliableStreams.Add( channel, stream );
+                            ReliableStreams.Add( channel, stream );
                         }
                     }
                     if (streamId == StreamId.RID)
@@ -121,7 +121,7 @@ namespace Fusion
 
                 case StreamId.UID:
                 {
-                    m_UnreliableStream.ReceiveDataWT( reader, writer );
+                    UnreliableStream.ReceiveDataWT( reader, writer );
                 }
                 break;
 
@@ -133,21 +133,19 @@ namespace Fusion
 
         internal virtual void FlushDataST( BinaryWriter writer )
         {
-            lock (m_ReliableStreams)
+            lock (ReliableStreams)
             {
-                foreach (var kvp in m_ReliableStreams)
+                foreach (var kvp in ReliableStreams)
                 {
                     ReliableStream stream = kvp.Value;
                     stream.FlushST( writer );
                 }
             }
-            m_UnreliableStream.FlushST( writer );
+            UnreliableStream.FlushST( writer );
         }
 
-        virtual internal void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
+        virtual internal void ReceiveSystemMessageWT( bool isReliableMsg, BinaryReader reader, BinaryWriter writer, SystemPacketId id, IPEndPoint endpoint, byte channel )
         {
-            // Silently, ignore irrelevant packages
-            Debug.Assert( id < (byte)SystemPacketId.Count );
         }
     }
 }

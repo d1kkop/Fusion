@@ -27,7 +27,7 @@ namespace Fusion
             writer.Write( (byte)streamId );
         }
 
-        internal override void Send( byte id, byte [] data, byte channel, SendMethod sendMethod, DeliveryTrace trace )
+        internal override void Send( byte id, byte [] data, byte channel, bool isSystem, SendMethod sendMethod, DeliveryTrace trace )
         {
             switch (sendMethod)
             {
@@ -36,7 +36,7 @@ namespace Fusion
                 break;
 
                 default:
-                base.Send( id, data, channel, sendMethod, trace );
+                base.Send( id, data, channel, isSystem, sendMethod, trace );
                 break;
             }
         }
@@ -75,10 +75,9 @@ namespace Fusion
             }
         }
 
-        internal override void ReceiveSystemMessageWT( BinaryReader reader, BinaryWriter writer, byte id, IPEndPoint endpoint, byte channel )
+        internal override void ReceiveSystemMessageWT( bool isReliableMsg, BinaryReader reader, BinaryWriter writer, SystemPacketId id, IPEndPoint endpoint, byte channel )
         {
-            Debug.Assert( channel == ReliableStream.SystemChannel || id == (byte)SystemPacketId.RPC );
-            Debug.Assert( id < (byte)SystemPacketId.Count );
+            Debug.Assert( channel == ReliableStream.SystemChannel || id == SystemPacketId.RPC );
 
             SystemPacketId enumId = (SystemPacketId)id;
             ConnectionState connState = ConnectStream.ConnectionState;
@@ -141,13 +140,13 @@ namespace Fusion
                     break;
 
                     case SystemPacketId.RPC:
-                    ConnectedNode.ReceiveRPCWT( reader, channel, this );
+                    ConnectedNode.ReceiveRPCWT( isReliableMsg, reader, channel, this );
                     break;
                 }
             }
 
             // Packet not handled yet.
-            base.ReceiveSystemMessageWT( reader, writer, id, endpoint, channel );
+            base.ReceiveSystemMessageWT( isReliableMsg, reader, writer, id, endpoint, channel );
         }
     }
 }

@@ -147,21 +147,20 @@ namespace Fusion
             {
                 while (reader.BaseStream.Position < reader.BaseStream.Length)
                 {
-                    byte   messageId  = reader.ReadByte();
-                    bool   isSystem   = reader.ReadBoolean();
+                    SystemPacketId id = (SystemPacketId)reader.ReadByte();
+                    bool isSystem     = reader.ReadBoolean();
                     ushort messageLen = reader.ReadUInt16();
                     long preMessagePosition = reader.BaseStream.Position;
 
                     if ( isSystem )
                     {
-                        Debug.Assert( (SystemPacketId)messageId < SystemPacketId.Count );
-                        Recipient.ReceiveSystemMessageWT( reader, writer, messageId, Recipient.EndPoint, ReliableStream.SystemChannel );
+                        Recipient.ReceiveSystemMessageWT( false, reader, writer, id, Recipient.EndPoint, ReliableStream.SystemChannel );
                     }
                     else
                     {
                         // Make reliable received message
                         RecvMessage rm = new RecvMessage();
-                        rm.m_Id        = messageId;
+                        rm.m_Id        = (byte)id;
                         rm.m_Payload   = messageLen != 0 ? reader.ReadBytes( messageLen ) : null;
                         rm.m_Recipient = Recipient.EndPoint;
 

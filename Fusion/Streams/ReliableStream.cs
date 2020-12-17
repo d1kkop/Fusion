@@ -108,6 +108,7 @@ namespace Fusion
 
         class RecvMessage
         {
+            internal IMessage m_ExternalMsg; // In case this msg is not handled in ReliableStream but externally.
             internal byte m_Channel;
             internal byte m_Id;
             internal byte [] m_Payload;
@@ -177,7 +178,14 @@ namespace Fusion
                 while ( m_ReliableDataRecv.m_FinalMessages.Count !=0 )
                 {
                     var msg = m_ReliableDataRecv.m_FinalMessages.Dequeue();
-                    Recipient.Node.RaiseOnMessage( msg.m_Id, msg.m_Payload, msg.m_Recipient, Channel );
+                    if (msg.m_ExternalMsg != null)
+                    {
+                        msg.m_ExternalMsg.Process();
+                    }
+                    else
+                    {
+                        Recipient.Node.RaiseOnMessage( msg.m_Id, msg.m_Payload, msg.m_Recipient, Channel );
+                    }
                 }
             }
         }
@@ -251,6 +259,21 @@ namespace Fusion
             Recipient.UDPClient.SendSafe( binWriter.GetData(), Recipient.EndPoint );
         }
 
+        // Called optionally from RecvThreat (WT) to insert message in reliable stream to ensure correct ordering.
+        internal void AddRecvMessageWT( IMessage msg )
+        {
+            Debug.Assert( msg!=null );
+            // Make reliable received message
+            RecvMessage rm = new RecvMessage();
+            rm.m_ExternalMsg = msg;
+            rm.m_Channel   = Channel;
+            // Add it thread safely
+            lock (m_ReliableDataRecv.m_FinalMessages)
+            {
+                m_ReliableDataRecv.m_FinalMessages.Enqueue( rm );
+            }
+        }
+
         internal void ReceiveDataWT( BinaryReader reader, BinaryWriter writer )
         {
             uint sequence         = reader.ReadUInt32();
@@ -294,13 +317,13 @@ namespace Fusion
             {
                 // Peek if message is system message. If so, handle system messages directly in the worker thread.
                 // However, do NOT spawn new async task as that could invalidate the reliability order.
-                if (Channel == SystemChannel)
+                if ( Channel == SystemChannel || msg.m_Id == (byte)SystemPacketId.RPC )
                 {
                     Debug.Assert( msg.m_Id < (byte)SystemPacketId.Count );
                     using (MemoryStream ms = new MemoryStream( msg.m_Payload ?? m_EmptyByteArray ))
                     using (reader = new BinaryReader( ms ))
                     {
-                        Recipient.ReceiveSystemMessageWT( reader, writer, msg.m_Id, Recipient.EndPoint, Channel );
+                        Recipient.ReceiveSystemMessageWT( false, reader, writer, (SystemPacketId)msg.m_Id, Recipient.EndPoint, Channel );
                     }
                 }
                 else

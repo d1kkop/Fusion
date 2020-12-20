@@ -59,7 +59,7 @@ namespace TestReliable.Tests
                 n2.AddRecipient( dstPort, "localhost", boundPort );
                 string myMessage = "A first message";
                 byte [] data = Encoding.UTF8.GetBytes(myMessage);
-                n2.SendReliable( 255, data );
+                n2.SendReliable( 254, data );
 
                 n1.OnMessage += ( byte id, byte[] message, IPEndPoint recipient, byte channel ) =>
                 {
@@ -143,7 +143,7 @@ namespace TestReliable.Tests
                     {
                         int a = rand.Next(0, 999);
                         int b = rand.Next(0, 999);
-                        byte packId = (byte)rand.Next(0, 256);
+                        byte packId = (byte)rand.Next(0, 255); // excluding rpc id
                         byte chanId = (byte)rand.Next(0, 255); // excluding system channel
                         var dic = channelDataN1;
                         if (j==1) dic = channelDataN2;

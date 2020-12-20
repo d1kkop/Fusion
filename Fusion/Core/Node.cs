@@ -35,8 +35,8 @@ namespace Fusion
         ConnectAccepted,
         Disconnect,
         KeepAlive,
-        RPC,
-        Count
+        Count,
+        RPC = 255
     }
 
     public class Node : Messagable, IDisposable
@@ -175,6 +175,10 @@ namespace Fusion
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
+            if (id == (byte)SystemPacketId.RPC)
+            {
+                throw new InvalidOperationException( "Id " + id + " is reserved, use different." );
+            }
             SendPrivate( id, data, channel, SendMethod.Reliable, target, except, false );
         }
 
@@ -183,6 +187,10 @@ namespace Fusion
             if (channel == ReliableStream.SystemChannel)
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
+            }
+            if (id == (byte)SystemPacketId.RPC)
+            {
+                throw new InvalidOperationException( "Id " + id + " is reserved, use different." );
             }
             return SendPrivate( id, data, channel, SendMethod.Reliable, target, except, true );
         }
@@ -229,7 +237,7 @@ namespace Fusion
                     Recipient recipient;
                     if (m_Recipients.TryGetValue( target, out recipient ))
                     {
-                        recipient.Send( id, dataCpy, 0, false, SendMethod.Unreliable, null );
+                        recipient.Send( id, dataCpy, 0, isSystem, SendMethod.Unreliable, null );
                     }
                 }
                 else
@@ -239,7 +247,7 @@ namespace Fusion
                         Recipient recipient = kvp.Value;
                         if (recipient.EndPoint == except)
                             continue;
-                        recipient.Send( id, dataCpy, 0, false, SendMethod.Unreliable, null );
+                        recipient.Send( id, dataCpy, 0, isSystem, SendMethod.Unreliable, null );
                     }
                 }
             }

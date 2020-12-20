@@ -159,7 +159,7 @@ namespace Fusion
                 return d;
             };
 
-            m_TypeDeserializers.Add( typeof( Dictionary<string, string> ), deserializeListStr );
+            m_TypeDeserializers.Add( typeof( Dictionary<string, string> ), serializeDicStrStr );
         }
 
         public void DoReliableRPC( string methodName, byte channel, IPEndPoint onlyThisRecipient, bool callLocally, params object[] arguments )
@@ -204,7 +204,7 @@ namespace Fusion
             switch (sendMethod)
             {
                 case SendMethod.Reliable:
-                SendReliable( (byte)SystemPacketId.RPC, BinWriter.GetData(), channel, onlyThisRecipient, null );
+                SendPrivate( (byte)SystemPacketId.RPC, BinWriter.GetData(), channel, SendMethod.Reliable, onlyThisRecipient, null );
                 break;
 
                 case SendMethod.Unreliable:

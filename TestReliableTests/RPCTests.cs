@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Linq;
 
 namespace TestReliable.Tests
 {
@@ -133,8 +134,8 @@ namespace TestReliable.Tests
         [RPC]
         public static void ManyRPC2( Dictionary<string, string> phonebook, List<string> people, ConnectedRecipient recipient, byte channel )
         {
-            Assert.IsTrue( m_rpcData2[m_recvNum2].m_phonebook == phonebook );
-            Assert.IsTrue( m_rpcData2[m_recvNum2].m_people == people );
+            Assert.IsTrue( m_rpcData2[m_recvNum2].m_phonebook.All( kvp => phonebook.Contains( kvp ) ) );
+            Assert.IsTrue( m_rpcData2[m_recvNum2].m_people.All( kvp => people.Contains( kvp ) ) );
             m_recvNum2++;
         }
 

@@ -319,7 +319,7 @@ namespace Fusion
                 // However, do NOT spawn new async task as that could invalidate the reliability order.
                 if ( Channel == SystemChannel || msg.m_Id == (byte)SystemPacketId.RPC )
                 {
-                    Debug.Assert( msg.m_Id < (byte)SystemPacketId.Count );
+                    Debug.Assert( msg.m_Id < (byte)SystemPacketId.Count || msg.m_Id == (byte)SystemPacketId.RPC );
                     using (MemoryStream ms = new MemoryStream( msg.m_Payload ?? m_EmptyByteArray ))
                     using (reader = new BinaryReader( ms ))
                     {

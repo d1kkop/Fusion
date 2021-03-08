@@ -116,7 +116,7 @@ namespace Fusion
                     Debug.Assert( msg.m_Payload.Length <= MaxFrameSize );
                     binWriter.Write( msg.m_Id );
                     binWriter.Write( msg.m_IsSystem );
-                    if (msg.m_Payload != null)
+                    if (msg.m_Payload != null && msg.m_Payload.Length!=0)
                     {
                         binWriter.Write( (ushort)msg.m_Payload.Length );
                         binWriter.Write( msg.m_Payload );

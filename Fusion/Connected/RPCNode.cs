@@ -85,16 +85,19 @@ namespace Fusion
             m_TypeSerializers.Add( typeof( float ), ( bw, o ) => bw.Write( (float)o ) );
             m_TypeSerializers.Add( typeof( double ), ( bw, o ) => bw.Write( (double)o ) );
             m_TypeSerializers.Add( typeof( decimal ), ( bw, o ) => bw.Write( (decimal)o ) );
-            m_TypeSerializers.Add( typeof( string ), ( bw, o ) => bw.Write( (string)o ) );
+            m_TypeSerializers.Add( typeof( string ), ( bw, o ) =>
+            {
+                var str = (string)o;
+                bw.Write( str );
+            } );
 
             Action<BinaryWriter, object> serializeListStr = (BinaryWriter bw, object o) =>
             {
                 List<string> list = o as List<string>;
-                byte num = (byte) list.Count;
-                if ( num > byte.MaxValue )
-                    throw new InvalidOperationException("Too many entries in list added.");
-                bw.Write(num);
-                for ( int i = 0; i < num; i++ )
+                if ( list.Count > ushort.MaxValue )
+                    throw new InvalidOperationException("Too many entries in list added. Max is: " + ushort.MaxValue);
+                bw.Write((ushort)list.Count);
+                for ( int i = 0; i < list.Count; i++ )
                     bw.Write(list[i]);
             };
 
@@ -103,10 +106,9 @@ namespace Fusion
             Action<BinaryWriter, object> serializeDicStrStr = (BinaryWriter bw, object o) =>
             {
                 Dictionary<string, string> d = o as Dictionary<string, string>;
-                byte num = (byte) d.Count;
-                if ( num > byte.MaxValue )
-                    throw new InvalidOperationException("Too many entries in dictionary added.");
-                bw.Write(num);
+                if ( d.Count > ushort.MaxValue )
+                    throw new InvalidOperationException("Too many entries in dictionary added. Max is: " + ushort.MaxValue);
+                bw.Write((ushort)d.Count);
                 foreach( var kvp in d )
                 {
                     bw.Write( kvp.Key );
@@ -130,12 +132,17 @@ namespace Fusion
             m_TypeDeserializers.Add( typeof( float ), ( bw ) => bw.ReadSingle() );
             m_TypeDeserializers.Add( typeof( double ), ( bw ) => bw.ReadDouble() );
             m_TypeDeserializers.Add( typeof( decimal ), ( bw ) => bw.ReadDecimal() );
-            m_TypeDeserializers.Add( typeof( string ), ( bw ) => bw.ReadString() );
+            m_TypeDeserializers.Add( typeof( string ), ( bw ) =>
+
+            {
+                var str = bw.ReadString();
+                return str;
+            });
 
             Func<BinaryReader, object> deserializeListStr = (BinaryReader bw) =>
             {
                 List<string> list = new List<string>();
-                byte num = bw.ReadByte();
+                ushort num = bw.ReadUInt16();
                 for ( int i = 0; i < num; i++ )
                 {
                     string str = bw.ReadString();
@@ -149,7 +156,7 @@ namespace Fusion
             Func<BinaryReader, object> serializeDicStrStr = (BinaryReader bw) =>
             {
                 Dictionary<string, string> d = new Dictionary<string, string>();
-                byte num = bw.ReadByte();
+                ushort num = bw.ReadUInt16();
                 for ( int i = 0; i < num; i++ )
                 {
                     string key   = bw.ReadString();
@@ -181,7 +188,7 @@ namespace Fusion
                 throw new InvalidOperationException( "Argument count does not match number of arguments of method: " + methodName );
 
             if (arguments.Length > byte.MaxValue)
-                throw new InvalidOperationException( "Max number of argumetns is " + byte.MaxValue );
+                throw new InvalidOperationException( "Max number of arguments is " + byte.MaxValue );
 
             if (callLocally)
             {
@@ -190,7 +197,7 @@ namespace Fusion
             }
 
             BinWriter.ResetPosition();
-            BinWriter.Write( (byte)data.m_Id );
+            BinWriter.Write( data.m_Id );
             BinWriter.Write( (byte)arguments.Length );
             for( int i = 0; i < arguments.Length; i++ )
             {

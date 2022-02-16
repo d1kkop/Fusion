@@ -97,17 +97,8 @@ namespace TestReliable.Tests
 
         internal struct RPCData3
         {
-            internal float m_f;
-            internal decimal m_dm;
-            internal byte m_b;
-            internal sbyte m_sb;
-            internal uint m_ui;
-            internal ushort m_us;
-            internal short m_s;
-            internal long m_l;
-            internal ulong m_ul;
-            internal Dictionary<string, string > m_phonebook;
-            internal List<string> m_people;
+            internal RPCData1 rpc1;
+            internal RPCData2 rpc2;
         }
 
         static int m_recvNum1, m_recvNum2, m_recvNum3;
@@ -140,20 +131,18 @@ namespace TestReliable.Tests
         }
 
         [RPC]
-        public static void ManyRPC3( float f, decimal dm, byte b, sbyte sb, uint ui, ushort us, short s, long l, ulong ul,
-            Dictionary<string, string> phonebook, List<string> people, ConnectedRecipient recipient, byte channel )
+        public static void ManyRPC3( int a, byte b, char c, double d, string name, List<string> people,
+            Dictionary<string, string> book, List<string> people2,
+            ConnectedRecipient recipient, byte channel )
         {
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_f == f );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_dm == dm );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_b == b );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_sb == sb );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_ui == ui );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_us == us );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_s == s );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_l == l );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_ul == ul );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_phonebook == phonebook );
-            Assert.IsTrue( m_rpcData3[m_recvNum3].m_people == people );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_a == a );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_b == b );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_c == c );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_d == d );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_name == name );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc1.m_people.All( p => people.Contains(p) ) );
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc2.m_phonebook.All( kvp => book.Contains( kvp ) ));
+            Assert.IsTrue( m_rpcData3[m_recvNum3].rpc2.m_people.All( kvp => people2.Contains( kvp ) ));
             m_recvNum3++;
         }
 
@@ -280,6 +269,101 @@ namespace TestReliable.Tests
                 }
 
                 Assert.IsTrue( m_recvNum2 == numMessages );
+            }
+        }
+
+        [TestMethod()]
+        public void ManyRPCS3()
+        {
+            int numMessages = 1;
+            Random r = new Random();
+            m_rpcData3 = new Dictionary<int, RPCData3>();
+            for (int i = 0; i < numMessages; i++)
+            {
+                RPCData3 rpData = new RPCData3();
+                rpData.rpc1 = new RPCData1();
+                rpData.rpc2 = new RPCData2();
+                rpData.rpc1.m_a = r.Next();
+                rpData.rpc1.m_b = (byte)r.Next();
+                rpData.rpc1.m_c = (char)r.Next(0, 127);
+                rpData.rpc1.m_d = r.NextDouble();
+                for (int j = 0; j < 10000; j++)
+                    rpData.rpc1.m_name += "a" + rpData.rpc1.m_a+j;
+
+                rpData.rpc1.m_people = new List<string>();
+                for (int j = 0; j < 1000; j++)
+                    rpData.rpc1.m_people.Add("RandomItem" + rpData.rpc1.m_a + j);
+
+                rpData.rpc2.m_phonebook = new Dictionary<string, string>();
+                for (int j = 0; j < 1000; j++)
+                {
+                    rpData.rpc2.m_phonebook.Add(j+"jaap", "063738881");
+                    rpData.rpc2.m_phonebook.Add(j+"tim", "123345234");
+                    rpData.rpc2.m_phonebook.Add(j+"erk jan", "1232131q65634563452345");
+                    rpData.rpc2.m_phonebook.Add(j+"tralal lalal", "123123123fasdfasd");
+                    rpData.rpc2.m_phonebook.Add(j+"rafl pafl", "063738asdfasdfasfd6563456356881");
+                    rpData.rpc2.m_phonebook.Add(j+"what is this", "adsfasfdaaaaaaaaa");
+                    rpData.rpc2.m_phonebook.Add(j+"a number", "adsfadsfsdfkkkkkkkkkkk");
+                    rpData.rpc2.m_phonebook.Add(j+"not a name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$");
+                    rpData.rpc2.m_phonebook.Add(j+"not a1 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$1");
+                    rpData.rpc2.m_phonebook.Add(j+"not a2 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$2");
+                    rpData.rpc2.m_phonebook.Add(j+"not a3 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$3");
+                    rpData.rpc2.m_phonebook.Add(j+"not a4 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$4");
+                    rpData.rpc2.m_phonebook.Add(j+"not a5 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$5");
+                    rpData.rpc2.m_phonebook.Add(j+"not a6 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$6");
+                    rpData.rpc2.m_phonebook.Add(j+"not a7 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$7");
+                    rpData.rpc2.m_phonebook.Add(j+"not a8 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$8");
+                    rpData.rpc2.m_phonebook.Add(j+"not a9 name", "asdfasdf55555555%%%%%%%%%%%%%!!!!!!!!!@@@@@@@@@@@@@@##############$$$$$$$$$$$$$9");
+                }
+
+                rpData.rpc2.m_people = new List<string>();
+                for (int j = 0; j < 1000; j++)
+                    rpData.rpc2.m_people.Add("RandomItem" + rpData.rpc1.m_a + j);
+
+                m_rpcData3.Add( i, rpData );
+            }
+
+            using (ConnectedNode client = new ConnectedNode())
+            using (ConnectedNode server = new ConnectedNode())
+            {
+                server.KeepConnectionsAlive = false;
+                client.KeepConnectionsAlive = false;
+
+                server.Host(3103, 1, "my pw", 0);
+                client.Connect("127.0.0.1", 3103, "my pw");
+
+                bool serverAlive = true;
+
+                client.OnConnect += (ConnectedRecipient recipient, ConnectResult result) =>
+                {
+                    for (int i = 0; i < numMessages; i++)
+                    {
+                        client.DoReliableRPC("ManyRPC3", 0, null, false,
+                            m_rpcData3[i].rpc1.m_a,
+                            m_rpcData3[i].rpc1.m_b,
+                            m_rpcData3[i].rpc1.m_c,
+                            m_rpcData3[i].rpc1.m_d,
+                            m_rpcData3[i].rpc1.m_name,
+                            m_rpcData3[i].rpc1.m_people,
+                            m_rpcData3[i].rpc2.m_phonebook,
+                            m_rpcData3[i].rpc2.m_people);
+
+                    }
+                };
+
+                server.OnDisconnect += (ConnectedRecipient recipient, DisconnectReason reason) =>
+                {
+                    serverAlive = false;
+                };
+
+                while (m_recvNum3 != numMessages && serverAlive)
+                {
+                    client.Sync();
+                    server.Sync();
+                    Thread.Sleep(30);
+                }
+
+                Assert.IsTrue(m_recvNum3 == numMessages);
             }
         }
     }

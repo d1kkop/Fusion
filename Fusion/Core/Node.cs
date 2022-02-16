@@ -49,6 +49,7 @@ namespace Fusion
 
         internal int NumRecipients => m_Recipients.Count;
         internal BinaryWriter BinWriter { get; private set; }
+        internal bool AllowFragmentation { get; } = true;
 
         public event Action<byte, byte [], IPEndPoint, byte> OnMessage;
         public event Action<int> OnReceptionError;
@@ -64,9 +65,9 @@ namespace Fusion
 
         public virtual void Sync()
         {
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
-                foreach (var kvp in m_Recipients)
+                foreach ( var kvp in m_Recipients )
                 {
                     Recipient recipient = kvp.Value;
                     recipient.Sync();
@@ -83,18 +84,18 @@ namespace Fusion
 
         protected virtual void Dispose( bool disposing )
         {
-            if (m_IsDisposed)
+            if ( m_IsDisposed )
                 return;
             m_IsDisposed = true;
-            if (disposing)
+            if ( disposing )
             {
                 m_IsClosing  = true;
                 m_SendThread.Join();
-                foreach (var kvp in m_Listeners)
+                foreach ( var kvp in m_Listeners )
                 {
                     kvp.Value.Dispose();
                 }
-                foreach (var kvp in m_Recipients)
+                foreach ( var kvp in m_Recipients )
                 {
                     kvp.Value.Dispose();
                 }
@@ -105,9 +106,9 @@ namespace Fusion
         public ushort AddListener( ushort port, int simulatePacketLoss = 0 )
         {
             Listener listener;
-            if (port != 0)
+            if ( port != 0 )
             {
-                if (!m_Listeners.TryGetValue( port, out listener ))
+                if ( !m_Listeners.TryGetValue( port, out listener ) )
                 {
                     listener = CreateListener( this, new UdpClient( port ) );
                     m_Listeners.Add( port, listener );
@@ -139,14 +140,14 @@ namespace Fusion
             Listener listener = m_Listeners[listenerPort];
 
             // Apparently, localhost:port is not recognized as valid IPEndPoint.
-            if (host=="localhost")
+            if ( host=="localhost" )
                 host ="127.0.0.1";
             string hostAndPort  = host+":"+port;  // Parse wants host with port added.
             IPEndPoint endpoint = IPEndPoint.Parse(hostAndPort);
 
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
-                if (!m_Recipients.TryGetValue( endpoint, out Recipient recipient ))
+                if ( !m_Recipients.TryGetValue( endpoint, out Recipient recipient ) )
                 {
                     recipient = CreateRecipient( this, endpoint, listener.UDPClient );
                     m_Recipients.Add( endpoint, recipient );
@@ -158,7 +159,7 @@ namespace Fusion
 
         public void RemoveRecipient( IPEndPoint endpoint )
         {
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
                 m_Recipients.Remove( endpoint );
             }
@@ -171,11 +172,11 @@ namespace Fusion
 
         public void SendReliable( byte id, ArraySegment<byte> data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
-            if (channel == ReliableStream.SystemChannel)
+            if ( channel == ReliableStream.SystemChannel )
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
-            if (id == (byte)SystemPacketId.RPC)
+            if ( id == (byte)SystemPacketId.RPC )
             {
                 throw new InvalidOperationException( "Id " + id + " is reserved, use different." );
             }
@@ -184,11 +185,11 @@ namespace Fusion
 
         public DeliveryTrace SendReliableWithTrace( byte id, ArraySegment<byte> data, byte channel = 0, IPEndPoint target = null, IPEndPoint except = null )
         {
-            if (channel == ReliableStream.SystemChannel)
+            if ( channel == ReliableStream.SystemChannel )
             {
                 throw new InvalidOperationException( "Channel " + channel + " is reserved, use different." );
             }
-            if (id == (byte)SystemPacketId.RPC)
+            if ( id == (byte)SystemPacketId.RPC )
             {
                 throw new InvalidOperationException( "Id " + id + " is reserved, use different." );
             }
@@ -201,22 +202,22 @@ namespace Fusion
             // We also may deal with multiple recipients. So they can all share the same duplicated data.
             byte [] dataCpy = data.GetCopy();
             DeliveryTrace dt = traceDelivery ? new DeliveryTrace() : null;
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
-                if (target != null)
+                if ( target != null )
                 {
                     Recipient recipient;
-                    if (m_Recipients.TryGetValue( target, out recipient ))
+                    if ( m_Recipients.TryGetValue( target, out recipient ) )
                     {
                         recipient.Send( id, dataCpy, channel, false, sendMethod, dt );
                     }
                 }
                 else
                 {
-                    foreach (var kvp in m_Recipients)
+                    foreach ( var kvp in m_Recipients )
                     {
                         Recipient recipient = kvp.Value;
-                        if (recipient.EndPoint == except)
+                        if ( recipient.EndPoint == except )
                             continue;
                         recipient.Send( id, dataCpy, channel, false, sendMethod, dt );
                     }
@@ -230,22 +231,22 @@ namespace Fusion
             // NOTE: The original data must be copied because the caller may change it after the call.
             // We also may deal with multiple recipients. So they can all share the same duplicated data.
             byte [] dataCpy = data.GetCopy();
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
-                if (target != null)
+                if ( target != null )
                 {
                     Recipient recipient;
-                    if (m_Recipients.TryGetValue( target, out recipient ))
+                    if ( m_Recipients.TryGetValue( target, out recipient ) )
                     {
                         recipient.Send( id, dataCpy, 0, isSystem, SendMethod.Unreliable, null );
                     }
                 }
                 else
                 {
-                    foreach (var kvp in m_Recipients)
+                    foreach ( var kvp in m_Recipients )
                     {
                         Recipient recipient = kvp.Value;
-                        if (recipient.EndPoint == except)
+                        if ( recipient.EndPoint == except )
                             continue;
                         recipient.Send( id, dataCpy, 0, isSystem, SendMethod.Unreliable, null );
                     }
@@ -255,14 +256,14 @@ namespace Fusion
 
         internal virtual void ReceiveDataWT( byte[] data, IPEndPoint endpoint, UdpClient client )
         {
-            if (endpoint == null || endpoint == null || client == null)
+            if ( endpoint == null || endpoint == null || client == null )
                 return;
 
             // Implicit get or add recipient from remote endpoint.
             Recipient recipient;
-            lock (m_Recipients)
+            lock ( m_Recipients )
             {
-                if (!m_Recipients.TryGetValue( endpoint, out recipient ))
+                if ( !m_Recipients.TryGetValue( endpoint, out recipient ) )
                 {
                     recipient = CreateRecipient( this, endpoint, client );
                     m_Recipients.Add( endpoint, recipient );
@@ -271,8 +272,8 @@ namespace Fusion
 
             //   try
             //   {
-            using (BinaryReader reader = new BinaryReader( new MemoryStream( data, false ) ))
-            using (BinaryWriter writer = new BinaryWriter( new MemoryStream() ))
+            using ( BinaryReader reader = new BinaryReader( new MemoryStream( data, false ) ) )
+            using ( BinaryWriter writer = new BinaryWriter( new MemoryStream() ) )
             {
                 recipient.ReceiveDataWT( reader, writer );
             }
@@ -284,13 +285,13 @@ namespace Fusion
 
         void FlushST()
         {
-            using (BinaryWriter binWriter = new BinaryWriter( new MemoryStream() ))
+            using ( BinaryWriter binWriter = new BinaryWriter( new MemoryStream() ) )
             {
-                while (!m_IsClosing)
+                while ( !m_IsClosing )
                 {
-                    lock (m_Recipients)
+                    lock ( m_Recipients )
                     {
-                        foreach (var kvp in m_Recipients)
+                        foreach ( var kvp in m_Recipients )
                         {
                             Recipient recipient = kvp.Value;
                             recipient.FlushDataST( binWriter );

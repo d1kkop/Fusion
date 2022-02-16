@@ -97,10 +97,11 @@ namespace Fusion
     {
         public const byte SystemChannel = 255;
         const int MaxFrameSize = 1400; // Ethernet frame is max 1500. Reduce 100 for overhead in other layers. Actual max is slightly higher due to overhead.
+        const int MaxHeaderOverhead = 20; // Max overhead in our own layers. Should never hit this though. This leaves 90 bytes of overhead for lower level layers.
 
         enum FragmentState
         {
-            NoData = 0, /*This indicates that data was already sent and received (acked). In which case sequential transmits write a 0 byte. */
+            NoData,
             NotFragmented,
             Begin,
             Intermediate,
@@ -137,7 +138,7 @@ namespace Fusion
         {
             internal uint m_Expected;
             internal Dictionary<uint, RecvMessage> m_PendingMessages = new Dictionary<uint, RecvMessage>();
-            internal List<RecvMessage> m_FinalMessages = new List<RecvMessage>();
+            internal Queue<RecvMessage> m_FinalMessages = new Queue<RecvMessage>();
         }
 
 
@@ -158,7 +159,7 @@ namespace Fusion
 
         internal void AddMessage( byte packetId, byte [] payload, DeliveryTrace trace )
         {
-            if (payload != null && payload.Length > MaxFrameSize)
+            if (payload != null && (!Recipient.Node.AllowFragmentation && payload.Length > MaxFrameSize))
                 throw new ArgumentException( "Payload null or exceeding max size of " + MaxFrameSize );
 
             if (payload != null && payload.Length > MaxFrameSize)
@@ -283,11 +284,9 @@ namespace Fusion
                     // Avoid UDP-builtin-fragmentation and exceeding max recvBuffer size (default=65536).
                     ushort msgLen = msg.m_Payload != null ? (ushort)msg.m_Payload.Count : (ushort)0;
                     Debug.Assert( msgLen <= MaxFrameSize );
-
-                    // Discarded added bytes for overhead in this check. We have already reserved 100 bytes for additional overhead in other layers.
-                    if (binWriter.BaseStream.Position+msgLen > MaxFrameSize ||
-                        numMessagesAdded > byte.MaxValue /* Max num messages is 255, as we can only sent back that num of acks. */
-                        )
+                    
+                    if ( numMessagesAdded >= byte.MaxValue ||   /* Max num messages is 255, as we can only sent back that num of acks. */
+                         binWriter.BaseStream.Position+msgLen+4 /* FragState(1) + MsgId(1) + MsgLen(2) */ > MaxFrameSize+MaxHeaderOverhead) // Try to write as many messages until MaxFrameSize is reached.
                     {
                         break;
                     }
@@ -310,7 +309,8 @@ namespace Fusion
                     else
                     {
                         // This message was already acked, so write 'true' so that it can be skipped on the recipient side.
-                        binWriter.Write( true );
+                        // This is necessary because no sequence number per packet is added but only one in front for the first packet. The remaining are consequative.
+                        binWriter.Write( (byte)FragmentState.NoData );
                     }
 
                     ++numMessagesAdded;
@@ -321,7 +321,8 @@ namespace Fusion
             // that no such payload can be added. Assert this.
             Debug.Assert( numMessagesAdded > 0 );
 
-            Debug.Assert( binWriter.BaseStream.Position < MaxFrameSize+50 );
+            // Should never have more than MaxHeaderOverhead bytes overhead in our custom overhead (this already very roughly taken).
+            Debug.Assert( binWriter.BaseStream.Position+4 /* FragState(1) + MsgId(1) + MsgLen(2) */ < MaxFrameSize+MaxHeaderOverhead );
 
             // Eventhough this is already in a send thread, do the actual send async to avoid keeping the lock longer than necessary.
             Recipient.UDPClient.SendSafe( binWriter.GetData(), Recipient.EndPoint );
@@ -349,18 +350,17 @@ namespace Fusion
             bool allMessagesOlder = !IsSequenceNewer(sequence, m_ReliableDataRecv.m_Expected);
             while (reader.BaseStream.Position < reader.BaseStream.Length)
             {
-                long oldPosition        = reader.BaseStream.Position;
-                FragmentState fragState = (FragmentState) reader.ReadByte();
-                uint bytesToNext = 1;
+                long oldPosition            = reader.BaseStream.Position;
+                FragmentState fragState     = (FragmentState) reader.ReadByte();
+                uint bytesToNext            = 1;
 
-                if (fragState != FragmentState.NoData)
+                if (fragState != FragmentState.NoData) // If (FragState == NoData) then the packet was data was not appended but is skipped, only sequence number must be incremented.
                 {
                     byte   id         = reader.ReadByte();
                     ushort messageLen = reader.ReadUInt16();
-                    bytesToNext       = messageLen + 4u; // uint16, id & skip bool
+                    bytesToNext       = messageLen + 4u; // uint16(2) + id(1) + skip_bool(1) = 4
 
                     if (!allMessagesOlder && // All messages are older, only need to know how many messages are appended for acking.
-                        IsSequenceNewer(sequence, m_ReliableDataRecv.m_Expected) &&
                         !m_ReliableDataRecv.m_PendingMessages.ContainsKey( sequence )) // Already have it buffered, skip to next.
                     {
                         // Make reliable received message
@@ -371,6 +371,8 @@ namespace Fusion
                         rm.m_Payload   = messageLen != 0 ? reader.ReadBytes( messageLen ) : null;
                         rm.m_Recipient = Recipient.EndPoint;
                         m_ReliableDataRecv.m_PendingMessages.Add( sequence, rm );
+
+                        Debug.Assert( reader.BaseStream.Position == oldPosition + bytesToNext );
                     }
                 }
 
@@ -380,12 +382,18 @@ namespace Fusion
                 reader.BaseStream.Position = oldPosition + bytesToNext;
             }
 
+            // NOTE: Cannot just move m_ReliableDataRecv.m_Expected to new sequence+1 because we may have received a group of newer sequences.
+            // It may not be the group of sequences starting at m_ReliableDataRecv.m_Expected, but instead more up front.
+
+            // Must always arrive exactly on total sent size.
+            Debug.Assert( reader.BaseStream.Position == reader.BaseStream.Length );
+
             // Regardless of whether the data was previously received or was just received as new, ack back the reception of this data.
             uint numAcks = sequence - firstSeq;
-            Debug.Assert( numAcks <= byte.MaxValue ); // The sending side much ensure that no more than 255 messages inside a datagram are transmitted.
+            Debug.Assert( numAcks <= byte.MaxValue ); // The sending side must ensure that no more than 255 messages inside a datagram are transmitted.
             FlushAckWT( writer, firstSeq, (byte)numAcks );
 
-            // Try to process as many reliable packets as possible.
+            // Try to process as many reliable packets as possible. 
             while ( m_ReliableDataRecv.m_PendingMessages.Count != 0 &&
                     m_ReliableDataRecv.m_PendingMessages.TryGetValue( m_ReliableDataRecv.m_Expected, out RecvMessage msg ) )
             {
@@ -400,30 +408,31 @@ namespace Fusion
                         return;
                 }
                 
-                // Remove pending (possible reassembled fragments).
+                // Remove pending (possibly reassembled fragments).
                 while (m_ReliableDataRecv.m_Expected != nextSequence)
                 {
                     m_ReliableDataRecv.m_PendingMessages.Remove( m_ReliableDataRecv.m_Expected );
                     m_ReliableDataRecv.m_Expected++;
                 }
+                Debug.Assert( m_ReliableDataRecv.m_Expected == nextSequence );
 
                 // Peek if message is system message. If so, handle system messages directly in the worker thread.
-                // However, do NOT spawn new async task as that could invalidate the reliability order.
+                // However, do NOT spawn new async task as that could invalidate the reliability order because we lose control of the async execution order.
                 if ( Channel == SystemChannel || msg.m_Id == (byte)SystemPacketId.RPC )
                 {
                     Debug.Assert( msg.m_Id < (byte)SystemPacketId.Count || msg.m_Id == (byte)SystemPacketId.RPC );
                     using (MemoryStream ms = new MemoryStream( msg.m_Payload ?? m_EmptyByteArray ))
                     using (reader = new BinaryReader( ms ))
                     {
-                        Recipient.ReceiveSystemMessageWT( false, reader, writer, (SystemPacketId)msg.m_Id, Recipient.EndPoint, Channel );
+                        Recipient.ReceiveSystemMessageWT( true, reader, writer, (SystemPacketId)msg.m_Id, Recipient.EndPoint, Channel );
                     }
                 }
                 else
                 {
-                    // Add it thread safely
+                    // Add it thread safely.
                     lock (m_ReliableDataRecv.m_FinalMessages)
                     {
-                        m_ReliableDataRecv.m_FinalMessages.Add( msg );
+                        m_ReliableDataRecv.m_FinalMessages.Enqueue( msg );
                     }
                 }
             }
@@ -434,16 +443,19 @@ namespace Fusion
             RecvMessage msg;
             nextNewSequence      = 0;
             int totalPayloadSize = firstFragmentSize;
-            uint lastSequence    = m_ReliableDataRecv.m_Expected+1; // Can skip first, already know size of that one.
-            for (; m_ReliableDataRecv.m_PendingMessages.TryGetValue( lastSequence, out msg ) &&
-                   msg.m_FragmentState != FragmentState.End;
-                   lastSequence++)
+            uint newSequence     = m_ReliableDataRecv.m_Expected+1; // Can skip first, already know size of that one.
+            m_ReliableDataRecv.m_PendingMessages.TryGetValue( newSequence, out msg );
+            while (msg != null)
             {
                 totalPayloadSize += msg.m_Payload.Length;
+                newSequence += 1; // So, if this is the last msg, then newSequence will point to the new (not available) msg.
+                if (msg.m_FragmentState == FragmentState.End)
+                    break;
+                m_ReliableDataRecv.m_PendingMessages.TryGetValue( newSequence, out msg );
             }
 
             // Missing intermediate fragment.
-            if (msg.m_FragmentState != FragmentState.End)
+            if (msg == null || msg.m_FragmentState != FragmentState.End)
                 return null;
 
             RecvMessage unfragmentedMessage     = new RecvMessage();
@@ -453,8 +465,10 @@ namespace Fusion
             unfragmentedMessage.m_Id            = msg.m_Id;
             unfragmentedMessage.m_Recipient     = msg.m_Recipient;
 
+            // Packets are actually removed from the caller side. Because they are also removed if packets are not fragmented. 
+            // This is handled universally.
             int offset = 0;
-            for ( uint sequence = m_ReliableDataRecv.m_Expected; sequence != lastSequence+1; sequence++ )
+            for ( uint sequence = m_ReliableDataRecv.m_Expected; sequence != newSequence; sequence++ )
             {
                 msg = m_ReliableDataRecv.m_PendingMessages[sequence];
                 msg.m_Payload.CopyTo( unfragmentedMessage.m_Payload, offset );
@@ -462,14 +476,16 @@ namespace Fusion
 #if DEBUG
                 if (sequence == m_ReliableDataRecv.m_Expected) 
                     Debug.Assert( msg.m_FragmentState == FragmentState.Begin );
-                else if (sequence == lastSequence)
+                else if (sequence == newSequence-1)
                     Debug.Assert( msg.m_FragmentState == FragmentState.End );
                 else
                     Debug.Assert( msg.m_FragmentState == FragmentState.Intermediate );
 #endif
             }
 
-            nextNewSequence = lastSequence+1;
+            Debug.Assert( offset == totalPayloadSize );
+
+            nextNewSequence = newSequence;
             return unfragmentedMessage;
         }
 

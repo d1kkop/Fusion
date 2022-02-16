@@ -21,9 +21,9 @@ namespace Fusion
 
     public class Updatable
     {
-        VariableGroup m_Group;
+     //   VariableGroup m_Group;
 
-        public VariableGroup Group => m_Group;
+      //  public VariableGroup Group => m_Group;
     }
 
     public class UpdatableOneByte : Updatable

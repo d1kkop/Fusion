@@ -12,6 +12,15 @@ namespace TestReliable.Tests
     {
         static bool receivedRpc;
         static bool receivedRpcU;
+        static string RpcTestFragmentMsg;
+
+        public RPCTests()
+        {
+            for (int i = 0;i<1400;i++)
+                RpcTestFragmentMsg += "a";
+            for (int i = 0;i<1;i++)
+                RpcTestFragmentMsg += "b";
+        }
 
         [RPC]
         public static void SendMessage(int a, byte b, char c, double d, string name, ConnectedRecipient recipient, byte channel )
@@ -364,6 +373,89 @@ namespace TestReliable.Tests
                 }
 
                 Assert.IsTrue(m_recvNum3 == numMessages);
+            }
+        }
+
+
+        static bool Rpc_TestReceived = false;
+        [RPC]
+        public static void RPC_TestFragment( string msg, ConnectedRecipient recipient, byte channel )
+        {
+            Assert.IsTrue( msg == RpcTestFragmentMsg );
+            Rpc_TestReceived = true;
+        }
+
+        [TestMethod()]
+        public void RPC_TestFragmentMethod()
+        {
+            using (ConnectedNode client = new ConnectedNode())
+            using (ConnectedNode server = new ConnectedNode())
+            {
+                server.KeepConnectionsAlive = false;
+                client.KeepConnectionsAlive = false;
+
+                server.Host( 3104, 1, "my pw", 0 );
+                client.Connect( "127.0.0.1", 3104, "my pw" );
+
+        
+                client.OnConnect += ( ConnectedRecipient recipient, ConnectResult result ) =>
+                {
+                    client.DoReliableRPC( "RPC_TestFragment", 0, null, false, RpcTestFragmentMsg );
+                };
+
+                server.OnDisconnect += ( ConnectedRecipient recipient, DisconnectReason reason ) =>
+                {
+                };
+
+                while (!Rpc_TestReceived)
+                {
+                    client.Sync();
+                    server.Sync();
+                    Thread.Sleep( 30 );
+                }
+
+                Assert.IsTrue( Rpc_TestReceived );
+            }
+        }
+
+        static bool Rpc_NoTestReceived = false;
+        [RPC]
+        public static void RPC_NoTestFragment( string msg, ConnectedRecipient recipient, byte channel )
+        {
+            Assert.IsTrue( msg == "bart" );
+            Rpc_NoTestReceived = true;
+        }
+
+        [TestMethod()]
+        public void RPC_TestNoFragmentMethod()
+        {
+            using (ConnectedNode client = new ConnectedNode())
+            using (ConnectedNode server = new ConnectedNode())
+            {
+                server.KeepConnectionsAlive = false;
+                client.KeepConnectionsAlive = false;
+
+                server.Host( 3105, 1, "my pw", 0 );
+                client.Connect( "127.0.0.1", 3105, "my pw" );
+
+
+                client.OnConnect += ( ConnectedRecipient recipient, ConnectResult result ) =>
+                {
+                    client.DoReliableRPC( "RPC_NoTestFragment", 0, null, false, "bart" );
+                };
+
+                server.OnDisconnect += ( ConnectedRecipient recipient, DisconnectReason reason ) =>
+                {
+                };
+
+                while (!Rpc_NoTestReceived)
+                {
+                    client.Sync();
+                    server.Sync();
+                    Thread.Sleep( 30 );
+                }
+
+                Assert.IsTrue( Rpc_NoTestReceived );
             }
         }
     }

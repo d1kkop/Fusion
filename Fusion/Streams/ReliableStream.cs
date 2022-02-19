@@ -146,6 +146,11 @@ namespace Fusion
         RecvData m_ReliableDataRecv;
         byte [] m_EmptyByteArray = new byte[0];
 
+#if TRACE_RELIABLE
+        static Dictionary<uint, SendMessage> m_dbgSendMessagesTrace = new Dictionary<uint, SendMessage>();
+#endif
+
+
         internal Recipient Recipient { get; }
         internal byte Channel { get; }
 
@@ -178,6 +183,7 @@ namespace Fusion
                     {
                         fragment = new ArraySegment<byte>(payload, offset, MaxFrameSize);
                         sizeLeft -= MaxFrameSize;
+                        offset += MaxFrameSize;
                         rm.m_FragmentState = (isFirst ? FragmentState.Begin : FragmentState.Intermediate);
                         isFirst=false;
                     }
@@ -185,8 +191,11 @@ namespace Fusion
                     {
                         fragment = new ArraySegment<byte>( payload, offset, sizeLeft );
                         sizeLeft -= sizeLeft;
+                        offset += sizeLeft;
                         rm.m_FragmentState = FragmentState.End;
                     }
+
+                    Debug.Assert( offset + sizeLeft == payload.Length );
  
                     rm.m_Id        = packetId;
                     rm.m_Payload   = fragment;
@@ -212,6 +221,13 @@ namespace Fusion
                     {
                         m_ReliableDataSend.m_Messages.Add( rm );
                     }
+
+#if TRACE_RELIABLE
+                    lock (m_dbgSendMessagesTrace)
+                    {
+                        m_dbgSendMessagesTrace.Add( rm.m_Sequence, rm );
+                    }
+#endif
                 }
             }
             else
@@ -237,6 +253,13 @@ namespace Fusion
                 {
                     m_ReliableDataSend.m_Messages.Add( rm );
                 }
+
+#if TRACE_RELIABLE
+                lock(m_dbgSendMessagesTrace)
+                {
+                    m_dbgSendMessagesTrace.Add( rm.m_Sequence, rm );
+                }
+#endif
             }
         }
 
@@ -373,6 +396,17 @@ namespace Fusion
                         m_ReliableDataRecv.m_PendingMessages.Add( sequence, rm );
 
                         Debug.Assert( reader.BaseStream.Position == oldPosition + bytesToNext );
+
+#if TRACE_RELIABLE
+                        lock (m_dbgSendMessagesTrace)
+                        {
+                            if ( m_dbgSendMessagesTrace.TryGetValue(sequence, out SendMessage sm) )
+                            {
+                                Debug.Assert( Enumerable.SequenceEqual( sm.m_Payload, rm.m_Payload ) );
+                                m_dbgSendMessagesTrace.Remove( sequence );
+                            }
+                        }
+#endif
                     }
                 }
 

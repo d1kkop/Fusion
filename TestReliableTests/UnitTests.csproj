@@ -4,6 +4,10 @@
     <TargetFramework>netcoreapp3.1</TargetFramework>
 
     <IsPackable>false</IsPackable>
+
+    <Platforms>AnyCPU;x64</Platforms>
+
+    <Configurations>Debug;Release;TRACE_RELIABLE</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
